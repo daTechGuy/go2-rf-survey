@@ -16,7 +16,31 @@ halves are written and tested — see [What works today](#what-works-today).
 | Platform | Unitree Go2 EDU | Jetson Orin, `192.168.123.18` |
 | LiDAR | Livox Mid-360 | 360° × 59° (−7° to +52°), 200k pts/s, built-in IMU |
 | Depth | Intel RealSense D435i | near-field obstacles inside the LiDAR blind zone |
-| WiFi scan | dedicated USB adapter | **must** be separate from the robot's own link — see [R2](#risks) |
+| WiFi scan | **MT7612U** USB adapter | Netgear A6210 or Alfa AWUS036ACM — see below |
+
+### The WiFi adapter is not an obvious choice
+
+Throughput is irrelevant — it only ever scans. What matters is a driver on
+**the Jetson's kernel (5.10)**, and Docker shares the host kernel so a
+container does not help.
+
+| Chipset | Mainline since | On 5.10 |
+|---|---|---|
+| **MT7612U** (`mt76x2u`) | 4.19 | ✅ plug and play |
+| MT7921AU | 5.18 | ❌ too new |
+| RTL8812BU | 6.12 | ❌ far too new |
+| RTL8812AU / **8814AU** | never | ❌ DKMS |
+
+This inverts the usual advice: MT7921AU is the newer, better adapter and is
+useless here. **Avoid anything sold as AC1750 / AC1900** — those classes are
+almost all RTL8814AU. Verify `lsusb` shows `0e8d:7612` before buying; vendors
+change chipsets between hardware revisions under one model name.
+
+It must also be **separate from the robot's own link** (R2) and have a
+**fixed, non-articulating antenna** (R5).
+
+Full detail, including a tested-and-rejected adapter:
+**[docs/HARDWARE.md](docs/HARDWARE.md)**
 
 ## How it works
 
@@ -225,10 +249,14 @@ there is a working deliverable even if Nav2 tuning stalls.
 - [ ] **08 · Nav2 and the waypoint route** — the long pole
       *Exit: unattended 20-waypoint route, zero interventions, twice*
 
-**Full execution plan — commands, verification and exit criteria for every
-phase: [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md)**
+### Documentation
 
-Derivations and decision records: [`docs/plan.md`](docs/plan.md)
+| | |
+|---|---|
+| **[RUNBOOK.md](docs/RUNBOOK.md)** | **What to type, in order, to get a heatmap.** Start here. |
+| [HARDWARE.md](docs/HARDWARE.md) | What to buy and what to avoid — especially the WiFi adapter |
+| [BUILD_PLAN.md](docs/BUILD_PLAN.md) | Nine phases with exit criteria and the risk register |
+| [plan.md](docs/plan.md) | Derivations and decision records (D1–D4) |
 
 ### On exploration
 
