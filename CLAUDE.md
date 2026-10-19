@@ -1,0 +1,107 @@
+# go2-rf-survey
+
+Context for resuming work on this project. Read this first.
+
+## What this is
+
+A Unitree Go2 EDU that maps a building with LiDAR, then walks it again
+recording WiFi signal strength at every waypoint, producing per-SSID heatmaps
+registered to the SLAM floorplan.
+
+Hardware: Go2 EDU (Jetson Orin, `192.168.123.18`), Livox Mid-360, RealSense
+D435i, plus a dedicated USB WiFi adapter for scanning.
+
+## Where things stand
+
+**No hardware access yet.** Everything buildable without the robot is built
+and tested; everything remaining needs real sensor data.
+
+| Phase | State |
+|---|---|
+| 00 Access and inventory | ⬜ **blocked — the next action** |
+| 01 ROS runtime | ⬜ depends on 00 |
+| 02 Mid-360 bring-up | ⬜ |
+| 03 Mount and TF | 🟨 code written, needs measurements |
+| 04 SLAM | 🟨 config written, needs tuning on hardware |
+| 05 **WiFi survey** | ✅ written + tested — the deliverable |
+| 06 Velocity bridge | ✅ written + tested |
+| 07 Depth and costmaps | ⬜ |
+| 08 Nav2 | ⬜ |
+
+**Next action:** SSH to the robot, run `bash tools/go2_survey.sh`, commit the
+output as `docs/survey-YYYY-MM-DD.txt`. It answers D1 and supplies the real
+network interface name and LiDAR IP, which several configs currently have as
+placeholders.
+
+## Decisions already made — don't relitigate
+
+Full reasoning in [`docs/plan.md`](docs/plan.md).
+
+- **D1** — Humble in a Docker container, not the stock Foxy. Foxy is EOL since
+  June 2023. *Revisit only if phase 0 shows Docker absent or without the
+  NVIDIA runtime.*
+- **D2** — Alias a second IP on the Jetson rather than reflashing the Mid-360.
+  Non-destructive and reversible.
+- **D3** — Pre-mapped waypoints, not live frontier exploration. Mapping and
+  surveying in one autonomous pass is where projects of this shape stall.
+- **D4** — Stop-and-scan, timestamped at scan *completion*. A moving scan
+  smears 1–2.5 m of travel into one sample.
+- The bridge talks to `unitree_ros2`'s `/api/sport/request` topic rather than
+  linking `unitree_sdk2`. No C++ build against an external SDK, and the safety
+  logic stays unit-testable.
+
+## Conventions
+
+- **Pure functions for anything that can be wrong quietly.** `iw` parsing,
+  velocity limiting, the watchdog, and the FOV maths are all ROS-free and
+  clock-free so they can be tested without hardware. 85 tests run on a bare
+  Python. Keep it that way — if new logic can be made testable, make it.
+- **Tests before hardware.** `python tools/run_tests.py` must stay green and
+  must not acquire dependencies.
+- **Placeholders are marked loudly.** `config/mount.yaml` and
+  `config/MID360_config.json` contain values that are guesses. Never quietly
+  treat them as measured.
+- **The mount pitch lives in the URDF only** — never also in
+  `MID360_config.json`'s extrinsics. Setting both double-applies the rotation,
+  which looks almost right and is completely wrong.
+- Commits: no co-author trailers. The user is sole contributor.
+
+## Gotchas that have already cost time
+
+- XML comments cannot contain `--`. Broke the xacro files once.
+- A wrong interface in `CYCLONEDDS_URI` gives a clean build, no error, and an
+  empty topic list. The container entrypoint checks this at startup.
+- Docker shares the **host kernel**, so a container cannot rescue a WiFi
+  driver that needs a newer kernel than the Jetson's 5.10.
+- `git filter-branch` leaves backup refs under `refs/original/`; `git log
+  --all` still shows the old messages until they are deleted.
+
+## Hardware notes
+
+- WiFi adapter must be **MT7612U** (mainline since 4.19). MT7921AU needs 5.18
+  and RTL8814AU was never mainlined. See [`docs/HARDWARE.md`](docs/HARDWARE.md).
+- The user owns an Edimax EW-7833UAC (`7392:a833`, RTL8814AU) — tested, works
+  as hardware, wrong chipset. Recommendation is to replace it.
+- Mid-360 vertical FOV is −7° to +52°, biased **upward**. Mounted level it
+  cannot see the floor within 3.3 m. Pitch it ~22° nose-down.
+
+## Layout
+
+```
+go2_survey_wifi/         scan + pose join → CSV          ✅ 18 tests
+go2_survey_bridge/       /cmd_vel → sport mode           ✅ 46 tests
+go2_survey_description/  TF frames, 22° LiDAR mount      ✅ 21 geometry tests
+tools/                   post-processing, runs off-robot
+docker/                  Humble container for the Jetson
+config/                  mount, MID360, FAST-LIO2 params
+docs/                    RUNBOOK, HARDWARE, BUILD_PLAN, plan
+```
+
+## Docs
+
+| | |
+|---|---|
+| [docs/RUNBOOK.md](docs/RUNBOOK.md) | what to type, in order |
+| [docs/HARDWARE.md](docs/HARDWARE.md) | what to buy, what to avoid |
+| [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) | nine phases, exit criteria, risks R1–R8 |
+| [docs/plan.md](docs/plan.md) | derivations and decision records |

@@ -4,8 +4,26 @@ Autonomous WiFi site surveying with a Unitree Go2 EDU. The robot maps a floor wi
 LiDAR, then walks it again recording signal strength at every waypoint, producing
 per-SSID heatmaps registered to the SLAM floorplan.
 
-**Status:** phase 0 pending hardware access. The measurement and post-processing
-halves are written and tested — see [What works today](#what-works-today).
+**Status:** phase 0, pending hardware access. The measurement and
+post-processing halves are written and tested — see
+[What works today](#what-works-today).
+
+> ### ▶ Resume here
+>
+> **Next action:** SSH to the robot and run the inventory script.
+>
+> ```bash
+> ssh unitree@192.168.123.18
+> git clone https://github.com/daTechGuy/go2-rf-survey.git && cd go2-rf-survey
+> bash tools/go2_survey.sh 2>&1 | tee docs/survey-$(date +%F).txt
+> ```
+>
+> That output answers [D1](docs/plan.md) and supplies the real network
+> interface name and LiDAR IP — several configs hold placeholders until it
+> exists. Full steps: **[docs/RUNBOOK.md](docs/RUNBOOK.md)**.
+>
+> **No robot to hand?** Part 0 of the runbook works on any machine:
+> `python tools/run_tests.py`, then render a heatmap from synthetic data.
 
 ---
 
