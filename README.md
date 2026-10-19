@@ -54,8 +54,18 @@ One row per access point per sample position:
 
 ## What works today
 
-The measurement and post-processing halves need no robot, so they are written
-and verified ahead of hardware access.
+Everything that doesn't need the robot is written and verified ahead of
+hardware access.
+
+```bash
+bash tools/run_tests.sh
+# 64 tests passed across 3 suites
+```
+
+Plain stdlib `unittest` — no ROS, no radio, no robot, no numpy. That's
+deliberate: the parts most likely to be quietly wrong (`iw` output parsing,
+velocity limiting, the watchdog) are pure functions precisely so they can be
+pinned before the hardware exists. `colcon test` picks them up too.
 
 ### `go2_survey_wifi` — the ROS 2 node
 
@@ -78,11 +88,7 @@ silently misplaced on the map.
 
 The `iw` parser is a pure function with **18 unit tests** covering hidden SSIDs,
 the `-- associated` suffix, fractional RSSI, channel-only output from older `iw`
-versions, and malformed blocks. No radio or ROS needed to run them:
-
-```bash
-python go2_survey_wifi/test/test_scanner.py
-```
+versions, and malformed blocks that must not take good blocks down with them.
 
 There's also a standalone adapter check, to confirm a radio works before ROS is
 in the picture:
@@ -90,6 +96,48 @@ in the picture:
 ```bash
 python -m go2_survey_wifi.scanner wlan1
 ```
+
+### `go2_survey_bridge` — `/cmd_vel` → sport mode
+
+Phase 6. Subscribes `geometry_msgs/Twist`, publishes `unitree_api/msg/Request`
+on `/api/sport/request`.
+
+It talks to the robot **through `unitree_ros2`'s topic, not by linking
+`unitree_sdk2`**. That means no C++ build against an external SDK, no
+`ChannelFactory`/network-interface handling in our code, and — the reason it
+matters most — the safety logic is a pure state machine with tests.
+
+Three guards, each for a different failure:
+
+| Guard | Failure it catches | Default |
+|---|---|---|
+| **clamp** | a planner emitting nonsense (Nav2 misconfigured to 2 m/s) | 0.6 / 0.4 m/s, 0.8 rad/s |
+| **slew** | an abrupt but legitimate setpoint — a quadruped stumbles on a velocity step where a wheeled robot wouldn't | 0.8 m/s², 1.6 rad/s² |
+| **watchdog** | the planner dying, network dropping, container being killed | stop after 0.3 s of silence |
+
+Plus a latching e-stop. `~/clear_estop` deliberately does **not** resume
+motion — the next `/cmd_vel` does, ramping from rest. Clearing an e-stop must
+never itself move a robot.
+
+```bash
+source ~/unitree_ros2/setup.sh
+ros2 launch go2_survey_bridge bridge.launch.py
+```
+
+**Verify the watchdog before trusting this to a planner.** With the robot on a
+stand:
+
+```bash
+ros2 service call /go2_cmd_bridge/balance_stand std_srvs/srv/Trigger
+ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.2}}'
+# Ctrl-C the publisher — the robot must stop within cmd_timeout_s.
+# If it doesn't, do not proceed to Nav2.
+```
+
+Services: `~/stand_up`, `~/balance_stand`, `~/stop`, `~/damp`,
+`~/recovery_stand`, `~/estop`, `~/clear_estop`. `~/damp` works even under
+e-stop — it's the safest terminal state, and a latch that blocks it would
+prevent the one command most likely wanted in an emergency.
 
 ### `tools/` — post-processing
 
@@ -251,19 +299,24 @@ It is read-only and changes nothing.
 ```
 go2_survey_wifi/         ✅ iw scan + TF pose join → CSV  (phase 5)
   go2_survey_wifi/
-    scanner.py             iw invocation + parsing — pure, unit-tested
+    scanner.py             iw invocation + parsing — pure, 18 tests
     survey_node.py         rclpy node, continuous + triggered modes
-  test/test_scanner.py     18 tests, no hardware required
   launch/survey.launch.py
+go2_survey_bridge/       ✅ /cmd_vel → sport mode         (phase 6)
+  go2_survey_bridge/
+    limits.py              clamp + slew + watchdog — pure, 31 tests
+    sport_api.py           API ids + request JSON — pure, 15 tests
+    bridge_node.py         rclpy node, services, e-stop
+  launch/bridge.launch.py
 tools/                   ✅ post-processing, runs off-robot
   occupancy.py             map_server PGM/YAML read + write
   heatmap.py               CSV + map → per-SSID heatmaps
   make_synthetic_survey.py fixture generator with ground truth
   go2_survey.sh            phase-0 onboard inventory
+  run_tests.sh             all suites, no dependencies
 docs/                    plan, decision records, sample output
 config/                  ⬜ MID360_config.json, FAST-LIO2, Nav2 params
 go2_survey_description/  ⬜ URDF, 22° LiDAR mount        (phase 3)
-go2_survey_bridge/       ⬜ /cmd_vel → SportClient        (phase 6)
 go2_survey_bringup/      ⬜ composed launch              (phase 8)
 ```
 

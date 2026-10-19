@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypeof="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>go2_survey_bridge</name>
+  <version>0.1.0</version>
+  <description>
+    Bridges ROS /cmd_vel to Go2 sport-mode requests, with velocity clamping,
+    acceleration limiting, a command watchdog and a latching e-stop.
+
+    Talks to the robot through unitree_ros2's /api/sport/request topic rather
+    than linking unitree_sdk2 directly, so there is no C++ build against an
+    external SDK and the safety logic stays unit-testable.
+  </description>
+
+  <maintainer email="brian.a.dye@gmail.com">daTechGuy</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+
+  <!--
+    unitree_api comes from unitree_ros2, which is built from source and is not
+    a rosdep key. Source its workspace before building:
+        source ~/unitree_ros2/setup.sh
+    bridge_node.py raises with that instruction if the import fails.
+  -->
+  <depend>unitree_api</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
