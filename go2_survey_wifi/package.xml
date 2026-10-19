@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypeof="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>go2_survey_wifi</name>
+  <version>0.1.0</version>
+  <description>
+    Joins WiFi scan sweeps to SLAM poses, producing a CSV of signal strength
+    per access point per surveyed position. Format 3 manifest and ament_python
+    so this builds unchanged on both Foxy and Humble -- the distro is not
+    settled until phase 0.
+  </description>
+
+  <maintainer email="brian.a.dye@gmail.com">daTechGuy</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>tf2_ros</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+
+  <!-- iw provides the scan itself; see scanner.py for why we shell out. -->
+  <exec_depend>iw</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

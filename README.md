@@ -4,7 +4,8 @@ Autonomous WiFi site surveying with a Unitree Go2 EDU. The robot maps a floor wi
 LiDAR, then walks it again recording signal strength at every waypoint, producing
 per-SSID heatmaps registered to the SLAM floorplan.
 
-**Status:** pre-phase-0. Nothing runs yet. See [Build sequence](#build-sequence).
+**Status:** phase 0 pending hardware access. The measurement and post-processing
+halves are written and tested — see [What works today](#what-works-today).
 
 ---
 
@@ -39,13 +40,89 @@ One row per access point per sample position:
 
 | Field | Example | Source |
 |---|---|---|
-| `stamp` | `1760932481.204` | ROS clock at scan **completion** |
-| `x`, `y` | `14.82, -3.07` | TF `map` → `base_link` |
+| `stamp` | `1760932481.204` | ROS clock at scan **completion** (see [D4](docs/plan.md)) |
+| `sample_id` | `42` | groups the rows of one sweep; groups rotate-and-average sets |
+| `x`, `y`, `z` | `14.82, -3.07, 0.40` | TF `map` → `base_link` |
 | `yaw` | `1.571` | same transform — required, see [R5](#risks) |
 | `bssid` | `3c:37:86:a1:b2:c3` | `iw scan` |
-| `ssid` | `CorpNet` | `iw scan` |
-| `freq` | `5180` | `iw scan` — separates bands |
+| `ssid` | `CorpNet` | `iw scan`; empty for hidden networks, which are still recorded |
+| `freq` | `5180` | `iw scan` |
+| `band` | `5` | derived — `2.4` / `5` / `6` |
 | `rssi` | `-67.0` | the measurement |
+
+---
+
+## What works today
+
+The measurement and post-processing halves need no robot, so they are written
+and verified ahead of hardware access.
+
+### `go2_survey_wifi` — the ROS 2 node
+
+Scans on a dedicated adapter, looks up the SLAM pose at scan completion, writes
+rows. Two modes:
+
+```bash
+# phase 5: teleop-drive and sample every metre of travel
+ros2 launch go2_survey_wifi survey.launch.py \
+    interface:=wlan1 output_csv:=$HOME/surveys/floor1.csv
+
+# phase 8: scan only when the waypoint follower says the robot is at rest
+ros2 launch go2_survey_wifi survey.launch.py mode:=triggered
+ros2 service call /wifi_survey/scan_now std_srvs/srv/Trigger
+```
+
+Rows flush to disk as produced — a flat battery costs the last sample, not the
+run. Samples whose pose is staler than `max_tf_age_s` are discarded rather than
+silently misplaced on the map.
+
+The `iw` parser is a pure function with **18 unit tests** covering hidden SSIDs,
+the `-- associated` suffix, fractional RSSI, channel-only output from older `iw`
+versions, and malformed blocks. No radio or ROS needed to run them:
+
+```bash
+python go2_survey_wifi/test/test_scanner.py
+```
+
+There's also a standalone adapter check, to confirm a radio works before ROS is
+in the picture:
+
+```bash
+python -m go2_survey_wifi.scanner wlan1
+```
+
+### `tools/` — post-processing
+
+Runs off-robot; `pip install -r tools/requirements.txt`, no ROS.
+
+```bash
+# generate a synthetic floorplan + survey with known ground truth
+python tools/make_synthetic_survey.py --out docs/sample
+
+# render it
+python tools/heatmap.py docs/sample.csv --map docs/sample.yaml --out docs/
+python tools/heatmap.py docs/sample.csv --map docs/sample.yaml --band 5 --out docs/
+```
+
+![sample heatmap](docs/sample-heatmap.png)
+
+*Synthetic data — a log-distance propagation model over a generated floorplan,
+not a real building. It exists so the rendering chain is provably correct before
+the robot produces anything.*
+
+Two masks are applied, and both matter:
+
+- **occupancy** — walls and unmapped cells are never coloured
+- **sample distance** — cells further than `--max-reach` from a real sample are
+  left blank. Without this, `griddata` fills rooms the robot never entered,
+  which is the most misleading thing a survey tool can do. The white area in
+  the lower middle of the sample is exactly that: a room left unvisited on
+  purpose to exercise the mask.
+
+Known limitation: the distance mask is euclidean, not geodesic, so two rooms
+sampled either side of a thin wall can bleed through it. Fixing that means a
+geodesic distance transform over the free space — worth doing if the floorplans
+get complicated.
 
 ---
 
@@ -169,21 +246,30 @@ It is read-only and changes nothing.
 
 ---
 
-## Planned layout
+## Layout
 
 ```
-go2_survey_bringup/      launch files + params
-go2_survey_wifi/         iw scan + TF pose join → CSV
-go2_survey_bridge/       /cmd_vel → SportClient, with watchdog
-go2_survey_description/  URDF, 22° LiDAR mount
-tools/                   inventory + heatmap scripts
-config/                  MID360_config.json, FAST-LIO2 params, Nav2 params
-docs/                    plan, survey outputs, maps
+go2_survey_wifi/         ✅ iw scan + TF pose join → CSV  (phase 5)
+  go2_survey_wifi/
+    scanner.py             iw invocation + parsing — pure, unit-tested
+    survey_node.py         rclpy node, continuous + triggered modes
+  test/test_scanner.py     18 tests, no hardware required
+  launch/survey.launch.py
+tools/                   ✅ post-processing, runs off-robot
+  occupancy.py             map_server PGM/YAML read + write
+  heatmap.py               CSV + map → per-SSID heatmaps
+  make_synthetic_survey.py fixture generator with ground truth
+  go2_survey.sh            phase-0 onboard inventory
+docs/                    plan, decision records, sample output
+config/                  ⬜ MID360_config.json, FAST-LIO2, Nav2 params
+go2_survey_description/  ⬜ URDF, 22° LiDAR mount        (phase 3)
+go2_survey_bridge/       ⬜ /cmd_vel → SportClient        (phase 6)
+go2_survey_bringup/      ⬜ composed launch              (phase 8)
 ```
 
-Packages get created in phase 2 once the ROS runtime is settled — no point
-committing to an `ament_python` vs `ament_cmake` split before phase 0 answers
-which distro we're on.
+`go2_survey_wifi` is `ament_python` with a format-3 manifest, so it builds
+unchanged on Foxy and Humble — the distro is not settled until phase 0, and
+nothing here needs it to be.
 
 ## Upstream dependencies
 

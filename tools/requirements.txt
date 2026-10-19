@@ -1,0 +1,10 @@
+# Post-processing only. These run off-robot -- on a laptop with no ROS -- so
+# they are deliberately not ROS dependencies. The survey node itself needs
+# none of this; it writes plain CSV.
+#
+#   python -m venv .venv && . .venv/bin/activate   # or .venv\Scripts\activate
+#   pip install -r tools/requirements.txt
+
+numpy>=1.21
+scipy>=1.7
+matplotlib>=3.5
