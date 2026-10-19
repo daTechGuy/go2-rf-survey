@@ -34,10 +34,41 @@ phase.
 
 | Item | Removes | Needed by |
 |---|---|---|
-| **USB WiFi adapter** (nl80211) | R2 — scanning tears down your own link | phase 5 |
+| **USB WiFi adapter — MT7612U** | R2 — scanning tears down your own link | phase 5 |
 | **USB-Ethernet adapter** for your laptop | — | phase 0 |
 | **Mount with ~22° forward pitch** | R3 — near-field blindness | phase 3 |
 | Second Go2 battery | R6 — 1–1.5 h of walking | phase 8 |
+
+### Choosing the scanning adapter
+
+Throughput is irrelevant — it only ever scans. What matters is whether the
+chipset has a driver on **the Jetson's kernel**, which JetPack 5.1.1 puts at
+**5.10**. Docker shares the host kernel, so the container does not help here.
+
+| Chipset | Mainline since | On kernel 5.10 |
+|---|---|---|
+| **MT7612U** (`mt76x2u`) | 4.19 | ✅ plug and play |
+| MT7921AU (`mt7921u`) | 5.18 | ❌ too new |
+| RTL8812BU | 6.12 | ❌ far too new |
+| RTL8812AU / 8814AU | never mainline | ❌ DKMS against a vendor kernel |
+
+This inverts the usual advice: MT7921AU would normally be the better buy, but
+on a 5.10 kernel it is useless without backporting. Known-good MT7612U parts:
+**Netgear A6210**, **Alfa AWUS036ACM**.
+
+Test any adapter you already own before buying — it costs nothing:
+
+```bash
+lsusb                                   # 0e8d: = MediaTek (good), 0bda: = Realtek
+dmesg | tail -20                        # did a driver bind?
+ip -brief link                          # did an interface appear?
+sudo iw dev wlan1 scan | grep -c '^BSS' # does it actually scan?
+```
+
+Prefer a **fixed, non-articulating antenna**. R5 already has RSSI varying
+5–10 dB with heading; an antenna that flops as the robot walks adds a second
+uncontrolled variable. Zip-tie hinged antennas in one position for the whole
+survey.
 
 ---
 
@@ -460,6 +491,33 @@ rather than restarts.
 | **R5** | RSSI depends on heading | log yaw; rotate-and-average | 05 |
 | **R6** | Battery will not cover a floor | resumable route segments | 08 |
 | **R7** | 0.40 m is not user height | mast, only if absolute dBm matters | — |
+| **R8** | **USB 3.0 raises the 2.4 GHz noise floor ~20 dB** — the robot biases its own measurement | USB 2.0 port, physical separation, characterise before trusting data | 05, 07 |
+
+### R8 in detail — the robot interferes with its own instrument
+
+This one deserves expanding because it is invisible in the output. Intel's
+[whitepaper](https://www.usb.org/sites/default/files/327216.pdf) measured USB 3.0
+raising the 2.4 GHz noise floor by nearly 20 dB. The D435i is USB 3.0 and runs
+throughout a survey, a few centimetres from the scanning antenna.
+
+The failure mode: every 2.4 GHz reading is depressed while 5 GHz looks fine, and
+the heatmap shows a dead zone that is actually the robot.
+
+1. Put the WiFi adapter on a **USB 2.0** port.
+2. Separate it physically from the RealSense and its cable — a short extension
+   to the opposite end of the chassis.
+3. **Characterise it** (ten minutes, do this once in phase 5):
+
+```bash
+# park the robot, do not move it between the two scans
+python -m go2_survey_wifi.scanner wlan1 > /tmp/with_depth.txt
+# stop the RealSense, wait ~5 s
+python -m go2_survey_wifi.scanner wlan1 > /tmp/without_depth.txt
+diff <(sort /tmp/with_depth.txt) <(sort /tmp/without_depth.txt)
+```
+
+Compare 2.4 GHz RSSI for the same BSSIDs. More than a couple of dB means fix
+the layout before surveying — the instrument is lying.
 
 ---
 

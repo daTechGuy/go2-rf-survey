@@ -249,6 +249,7 @@ autonomous pass is where projects like this stall.
 | **R5** | **RSSI depends on heading.** Chassis and battery attenuate; 5–10 dB across 180° of rotation. | Rotate-and-average, 4 scans at 90°. At minimum log yaw. |
 | **R6** | **Battery won't cover a floor.** 1–1.5 h walking, less with full compute. | Resumable route segments with a persisted index. |
 | **R7** | **0.40 m is not user height.** Relative coverage transfers; absolute dBm at 1–1.5 m does not. | Only if you need absolute numbers — a light mast for the antenna alone. |
+| **R8** | **The robot biases its own measurement.** USB 3.0 raises the 2.4 GHz noise floor ~20 dB ([Intel](https://www.usb.org/sites/default/files/327216.pdf)), and the D435i runs inches from the scanning antenna. 2.4 GHz reads low, 5 GHz looks fine, and the heatmap shows a dead zone that is actually the robot. | USB 2.0 port, physical separation, and characterise it once — see [BUILD_PLAN](docs/BUILD_PLAN.md#r8-in-detail--the-robot-interferes-with-its-own-instrument). |
 
 ---
 
