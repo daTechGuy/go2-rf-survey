@@ -56,6 +56,33 @@ This inverts the usual advice: MT7921AU would normally be the better buy, but
 on a 5.10 kernel it is useless without backporting. Known-good MT7612U parts:
 **Netgear A6210**, **Alfa AWUS036ACM**.
 
+#### Adapter on hand: Edimax EW-7833UAC — not recommended
+
+Tested 2026-10-19. USB ID `7392:a833`, chipset **RTL8814AU**. Hardware is
+healthy (enumerates, radio on), but it is the worst of the four cases:
+
+- never merged to mainline
+- Edimax's own driver supports kernel 2.6–4.4 and will not compile past 4.10
+- the only path on 5.10 is out-of-tree DKMS
+  ([`morrownr/8814au`](https://github.com/morrownr/8814au), covers 5.4–6.18)
+  against a Jetson **vendor** kernel — needs L4T headers, rebuilds on every
+  kernel bump, and RTL8814AU is not known for stability under sustained
+  repeated scanning
+- it is USB 3.0, which buys nothing here (scanning only) and works against R8
+- its antenna is 180° adjustable — the articulating-antenna problem in R5
+
+Worth a time-boxed attempt if you already own it:
+
+```bash
+sudo apt install -y dkms git linux-headers-$(uname -r)
+git clone https://github.com/morrownr/8814au && cd 8814au && sudo ./install-driver.sh
+iw dev && sudo iw dev wlan1 scan | grep -c '^BSS'
+```
+
+Stop after an hour if it is not scanning. If it does work, soak-test it —
+scan in a loop for 30 minutes and confirm the interface does not wedge —
+before trusting it to a 90-minute survey.
+
 Test any adapter you already own before buying — it costs nothing:
 
 ```bash
