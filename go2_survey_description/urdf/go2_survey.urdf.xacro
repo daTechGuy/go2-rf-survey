@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<!--
+  Top-level description for the survey rig.
+
+  Deliberately minimal: frames, not geometry. Nav2 needs a footprint and a
+  TF tree; SLAM needs sensor frames with correct extrinsics. Neither needs a
+  visual mesh of a dog, and carrying one here would mean maintaining a copy
+  of Unitree's link geometry for no functional gain.
+
+  If you later want the visual model in RViz, set use_unitree_description to
+  true and have Unitree's go2_description on the AMENT_PREFIX_PATH; this file
+  then attaches the sensor frames to its trunk instead of defining its own.
+
+  Build it:
+      xacro go2_survey.urdf.xacro > /tmp/robot.urdf
+      check_urdf /tmp/robot.urdf
+-->
+<robot name="go2_survey" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="mount_pitch_deg" default="22.0"/>
+  <xacro:arg name="lidar_x" default="0.16"/>
+  <xacro:arg name="lidar_y" default="0.0"/>
+  <xacro:arg name="lidar_z" default="0.10"/>
+  <xacro:arg name="cam_x" default="0.29"/>
+  <xacro:arg name="cam_y" default="0.0"/>
+  <xacro:arg name="cam_z" default="0.02"/>
+  <xacro:arg name="cam_pitch_deg" default="0.0"/>
+  <!-- Nominal trunk height while standing. Used only for base_footprint;
+       the robot's actual height varies with gait and body pose. -->
+  <xacro:arg name="stand_height" default="0.32"/>
+
+  <xacro:include filename="$(find go2_survey_description)/urdf/sensors.urdf.xacro"/>
+
+  <!-- ====================================================================
+       base_footprint -> base_link
+
+       Nav2's costmaps and the footprint are defined on the ground plane,
+       so base_footprint is base_link projected down by the standing height.
+
+       This is a FIXED joint, which is an approximation: a walking quadruped
+       bobs, and its trunk height changes with gait and body pose. For 2D
+       navigation that approximation is fine — the footprint is a plan-view
+       polygon and does not care about a few centimetres of bob. It would
+       NOT be fine if you later fuse this into a 3D costmap expecting
+       accurate height.
+       ==================================================================== -->
+  <link name="base_footprint"/>
+  <link name="base_link"/>
+
+  <joint name="base_footprint_to_base_link" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 $(arg stand_height)" rpy="0 0 0"/>
+  </joint>
+
+  <xacro:survey_sensors
+      parent="base_link"
+      mount_pitch_deg="$(arg mount_pitch_deg)"
+      lidar_x="$(arg lidar_x)" lidar_y="$(arg lidar_y)" lidar_z="$(arg lidar_z)"
+      cam_x="$(arg cam_x)" cam_y="$(arg cam_y)" cam_z="$(arg cam_z)"
+      cam_pitch_deg="$(arg cam_pitch_deg)"/>
+
+</robot>

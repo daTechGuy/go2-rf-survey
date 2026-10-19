@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<!--
+  Sensor frames for the survey rig: Livox Mid-360 and Intel RealSense D435i.
+
+  This is a macro, not a standalone robot. It attaches sensor frames to a
+  parent link so it can sit on top of Unitree's official go2_description
+  without forking it — there is no reason to reinvent the dog, and every
+  reason not to maintain a copy of someone else's link geometry.
+
+  ============================================================================
+  EVERY OFFSET BELOW IS A PLACEHOLDER UNTIL YOU MEASURE IT.
+  ============================================================================
+  The tilt angle is a considered default (see docs/plan.md, mount-angle
+  derivation). The *translations* are guesses and will be wrong for your
+  mount. Measure from the trunk origin with a rule before trusting any of
+  this, and put the real numbers in config/mount.yaml.
+
+  A wrong translation here does not announce itself: SLAM still converges,
+  the map still looks clean, and the costmaps are quietly offset from where
+  the robot actually is.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="survey_sensors" params="
+      parent:=base_link
+      mount_pitch_deg:=22.0
+      lidar_x:=0.16  lidar_y:=0.0   lidar_z:=0.10
+      cam_x:=0.29    cam_y:=0.0     cam_z:=0.02
+      cam_pitch_deg:=0.0">
+
+    <!-- ==================================================================
+         Livox Mid-360
+
+         Pitched nose-down by mount_pitch_deg. In REP-103 (+X forward,
+         +Y left, +Z up) a POSITIVE pitch rotates +X toward -Z, i.e. tilts
+         the sensor down. That is what we want: the Mid-360's vertical FOV
+         is -7 deg to +52 deg, biased upward, so mounted level its lowest
+         ray does not reach the floor until h/tan(7 deg) ~= 3.3 m ahead.
+
+         The angle is declared HERE, in the TF tree, and NOT in
+         MID360_config.json's extrinsic fields. One source of truth: the TF
+         tree is what FAST-LIO2, both costmaps and RViz all read, and the
+         IMU's gravity alignment depends on it matching the frame SLAM uses.
+         ================================================================== -->
+    <link name="livox_frame"/>
+    <joint name="${parent}_to_livox" type="fixed">
+      <parent link="${parent}"/>
+      <child link="livox_frame"/>
+      <origin xyz="${lidar_x} ${lidar_y} ${lidar_z}"
+              rpy="0 ${radians(mount_pitch_deg)} 0"/>
+    </joint>
+
+    <!-- The Mid-360's internal IMU, which is what FAST-LIO2 integrates.
+         Offset from the LiDAR optical origin is a property of the sensor,
+         not of your mount, so unlike everything else here it is NOT a
+         placeholder — but do confirm it against your unit's datasheet. -->
+    <link name="livox_imu_frame"/>
+    <joint name="livox_to_imu" type="fixed">
+      <parent link="livox_frame"/>
+      <child link="livox_imu_frame"/>
+      <origin xyz="-0.011 -0.02329 0.04412" rpy="0 0 0"/>
+    </joint>
+
+    <!-- ==================================================================
+         Intel RealSense D435i
+
+         Covers the near field the LiDAR cannot see (inside ~0.7 m even
+         when tilted). Mounted forward-facing on the chassis front.
+         ================================================================== -->
+    <link name="camera_link"/>
+    <joint name="${parent}_to_camera" type="fixed">
+      <parent link="${parent}"/>
+      <child link="camera_link"/>
+      <origin xyz="${cam_x} ${cam_y} ${cam_z}"
+              rpy="0 ${radians(cam_pitch_deg)} 0"/>
+    </joint>
+
+    <!-- realsense2_camera publishes its data in an optical frame: +Z out of
+         the lens, +X right, +Y down. The rotation below is the standard
+         body -> optical convention and must not be "simplified away" —
+         without it, point clouds arrive rotated 90 degrees and the costmap
+         fills with phantom obstacles. -->
+    <link name="camera_depth_optical_frame"/>
+    <joint name="camera_to_depth_optical" type="fixed">
+      <parent link="camera_link"/>
+      <child link="camera_depth_optical_frame"/>
+      <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+    </joint>
+
+    <link name="camera_color_optical_frame"/>
+    <joint name="camera_to_color_optical" type="fixed">
+      <parent link="camera_link"/>
+      <child link="camera_color_optical_frame"/>
+      <origin xyz="0 0.015 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

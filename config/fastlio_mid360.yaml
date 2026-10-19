@@ -1,0 +1,79 @@
+# FAST-LIO2 parameters for the Livox Mid-360 on a Go2.
+#
+# Copy into FAST_LIO/config/ and launch with:
+#   ros2 launch fast_lio mapping.launch.py config_file:=fastlio_mid360.yaml
+#
+# Phase 4 exit criterion: walk a closed loop and return to the start. Drift
+# should be under ~1% of path length. If it is worse, work through the notes
+# on extrinsic_T and the covariances below before touching anything else.
+
+/**:
+  ros__parameters:
+
+    common:
+      lid_topic: "/livox/lidar"
+      imu_topic: "/livox/imu"
+      # The Mid-360 has a built-in IMU, so time offsets between the two
+      # streams are small and consistent. Leave these false unless you see
+      # the map smear specifically during fast yaw.
+      time_sync_en: false
+      time_offset_lidar_to_imu: 0.0
+
+    preprocess:
+      lidar_type: 1          # 1 = Livox custom message (NOT PointCloud2)
+      scan_line: 4
+      # Discard returns inside this radius. The Mid-360's own blind sphere is
+      # 0.1 m, but on a quadruped the robot's body and legs intrude much
+      # further: too small a value feeds leg returns into the map as moving
+      # obstacles, and odometry fights them. Raise if the map shows a
+      # persistent blob following the robot.
+      blind: 0.5
+      timestamp_unit: 3      # 3 = nanoseconds, which livox_ros_driver2 emits
+      point_filter_num: 3    # keep 1 point in N; raise if the Orin saturates
+
+    mapping:
+      # Downsampled map resolution. 0.2 m suits indoor corridors; drop to
+      # 0.1 for tight spaces at real CPU cost.
+      filter_size_surf: 0.2
+      filter_size_map: 0.2
+      cube_side_length: 500.0
+      max_iteration: 3
+      det_range: 40.0        # Mid-360 reaches 40 m at 10% reflectivity
+
+      # IMU noise. These are reasonable starting values for the Mid-360's
+      # internal IMU. If odometry drifts in a straight corridor, raise
+      # acc_cov/gyr_cov to trust the LiDAR more; if it jitters during the
+      # gait cycle, raise them further still -- a walking quadruped produces
+      # far more IMU noise than a wheeled robot, and this is the first knob
+      # to reach for.
+      acc_cov: 0.1
+      gyr_cov: 0.1
+      b_acc_cov: 0.0001
+      b_gyr_cov: 0.0001
+
+      # ===================================================================
+      # LiDAR -> IMU extrinsic. This is INTERNAL to the Mid-360: it is a
+      # property of the sensor, not of your mount, so it does NOT change
+      # when you pitch the bracket. The mount pitch lives in the URDF.
+      #
+      # Confirm against your unit's datasheet. A wrong value here is a
+      # classic cause of slow rotational drift that looks like bad tuning.
+      # ===================================================================
+      extrinsic_est_en: false
+      extrinsic_T: [-0.011, -0.02329, 0.04412]
+      extrinsic_R: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
+
+    publish:
+      # Dense cloud is for looking at, not for navigating. Turn scan_publish
+      # off once the map is trusted: on an Orin also running Nav2 and the
+      # RealSense, it is real CPU.
+      path_en: true
+      scan_publish_en: true
+      dense_publish_en: false
+      scan_bodyframe_pub_en: false
+
+    pcd_save:
+      pcd_save_en: false     # enable only for the phase-4 mapping run
+      interval: -1           # -1 = one file for the whole run

@@ -13,6 +13,7 @@ cd "$(dirname "$0")/.."
 
 suites=(
   go2_survey_wifi/test/test_scanner.py
+  tools/tests/test_fov_geometry.py
   go2_survey_bridge/test/test_limits.py
   go2_survey_bridge/test/test_sport_api.py
 )

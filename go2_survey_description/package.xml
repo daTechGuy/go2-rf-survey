@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypeof="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>go2_survey_description</name>
+  <version>0.1.0</version>
+  <description>
+    TF frames for the Go2 survey rig: Livox Mid-360 (pitched nose-down so it
+    can see the floor) and RealSense D435i.
+
+    Frames, not geometry. Nav2 needs a footprint and a TF tree; SLAM needs
+    sensor extrinsics. Neither needs a visual mesh of a dog, and carrying one
+    would mean maintaining a copy of Unitree's link geometry for no gain.
+  </description>
+
+  <maintainer email="brian.a.dye@gmail.com">daTechGuy</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

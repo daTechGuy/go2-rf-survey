@@ -1,0 +1,43 @@
+# Measured sensor mount geometry.
+#
+# ============================================================================
+# THESE ARE PLACEHOLDERS. MEASURE YOURS (phase 3).
+# ============================================================================
+#
+# All translations are metres from the trunk origin (base_link), in REP-103
+# body axes: +x forward, +y left, +z up. Angles are degrees.
+#
+# A wrong translation here is the quietest bug in the project: SLAM still
+# converges, the map still looks clean, and the costmaps sit silently offset
+# from where the robot really is. Measure with a rule, twice.
+#
+# Verification (phase 3 exit criterion): drive to a flat open area, look at
+# the accumulated cloud in RViz with the fixed frame set to base_footprint.
+# The floor must read flat and at z = 0, and walls must be vertical. If the
+# floor slopes, mount_pitch_deg is wrong. If it is flat but offset in z,
+# lidar_z or stand_height is wrong.
+
+go2_survey_description:
+  ros__parameters:
+
+    # --- Livox Mid-360 -----------------------------------------------------
+    # Nose-down pitch. See docs/plan.md for the derivation; 22 deg puts the
+    # lowest ray on the floor at ~0.72 m instead of 3.3 m, at the cost of
+    # upper FOV that ground navigation does not need.
+    mount_pitch_deg: 22.0
+
+    lidar_x: 0.16      # forward of trunk centre
+    lidar_y: 0.0       # assume centred; measure if your mount is not
+    lidar_z: 0.10      # above trunk origin
+
+    # --- Intel RealSense D435i ---------------------------------------------
+    # Covers the near field the LiDAR still cannot see inside ~0.72 m.
+    cam_x: 0.29        # at the chassis front
+    cam_y: 0.0
+    cam_z: 0.02
+    cam_pitch_deg: 0.0 # tilt down if the near-ground gap is still too large
+
+    # --- body --------------------------------------------------------------
+    # Nominal trunk height while standing in BalanceStand. Measure the robot
+    # in its actual survey pose, not lying down.
+    stand_height: 0.32

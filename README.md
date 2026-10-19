@@ -59,7 +59,7 @@ hardware access.
 
 ```bash
 bash tools/run_tests.sh
-# 64 tests passed across 3 suites
+# 85 tests passed across 4 suites
 ```
 
 Plain stdlib `unittest` — no ROS, no radio, no robot, no numpy. That's
@@ -225,7 +225,10 @@ there is a working deliverable even if Nav2 tuning stalls.
 - [ ] **08 · Nav2 and the waypoint route** — the long pole
       *Exit: unattended 20-waypoint route, zero interventions, twice*
 
-Full plan with diagrams and effort estimates: [`docs/plan.md`](docs/plan.md)
+**Full execution plan — commands, verification and exit criteria for every
+phase: [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md)**
+
+Derivations and decision records: [`docs/plan.md`](docs/plan.md)
 
 ### On exploration
 
@@ -308,15 +311,21 @@ go2_survey_bridge/       ✅ /cmd_vel → sport mode         (phase 6)
     sport_api.py           API ids + request JSON — pure, 15 tests
     bridge_node.py         rclpy node, services, e-stop
   launch/bridge.launch.py
+go2_survey_description/  ✅ TF frames, 22° LiDAR mount    (phase 3)
+  urdf/sensors.urdf.xacro  Mid-360 + D435i macro
+  urdf/go2_survey.urdf.xacro
+  launch/description.launch.py
+  rviz/survey.rviz
 tools/                   ✅ post-processing, runs off-robot
   occupancy.py             map_server PGM/YAML read + write
   heatmap.py               CSV + map → per-SSID heatmaps
   make_synthetic_survey.py fixture generator with ground truth
+  fov_geometry.py          mount-angle maths — pure, 21 tests
   go2_survey.sh            phase-0 onboard inventory
   run_tests.sh             all suites, no dependencies
-docs/                    plan, decision records, sample output
-config/                  ⬜ MID360_config.json, FAST-LIO2, Nav2 params
-go2_survey_description/  ⬜ URDF, 22° LiDAR mount        (phase 3)
+docker/                  ✅ Humble container for the Jetson (D1)
+config/                  🟨 mount.yaml, MID360_config.json, FAST-LIO2 params
+docs/                    BUILD_PLAN.md, plan.md, sample output
 go2_survey_bringup/      ⬜ composed launch              (phase 8)
 ```
 
