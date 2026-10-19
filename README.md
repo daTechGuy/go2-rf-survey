@@ -1,0 +1,194 @@
+# go2-rf-survey
+
+Autonomous WiFi site surveying with a Unitree Go2 EDU. The robot maps a floor with
+LiDAR, then walks it again recording signal strength at every waypoint, producing
+per-SSID heatmaps registered to the SLAM floorplan.
+
+**Status:** pre-phase-0. Nothing runs yet. See [Build sequence](#build-sequence).
+
+---
+
+## Hardware
+
+| Component | Part | Notes |
+|---|---|---|
+| Platform | Unitree Go2 EDU | Jetson Orin, `192.168.123.18` |
+| LiDAR | Livox Mid-360 | 360° × 59° (−7° to +52°), 200k pts/s, built-in IMU |
+| Depth | Intel RealSense D435i | near-field obstacles inside the LiDAR blind zone |
+| WiFi scan | dedicated USB adapter | **must** be separate from the robot's own link — see [R2](#risks) |
+
+## How it works
+
+```
+Mid-360 ──► livox_ros_driver2 ──► FAST-LIO2 ──┬──► Nav2 ──► /cmd_vel ──► SportClient ──► robot
+                                              │
+D435i ──► realsense2_camera ──────────────────┤ (obstacle layer)
+                                              │
+USB WiFi ──► iw scan ──► wifi_survey ◄─────────┘ (pose at scan time)
+                              │
+                              └──► survey.csv ──► heatmap
+```
+
+The SLAM pose is consumed twice — Nav2 needs it to drive, the survey node needs it
+to geotag a scan. There is no independent localisation path for the WiFi data, so
+odometry drift shows up directly as a smeared heatmap.
+
+## Output schema
+
+One row per access point per sample position:
+
+| Field | Example | Source |
+|---|---|---|
+| `stamp` | `1760932481.204` | ROS clock at scan **completion** |
+| `x`, `y` | `14.82, -3.07` | TF `map` → `base_link` |
+| `yaw` | `1.571` | same transform — required, see [R5](#risks) |
+| `bssid` | `3c:37:86:a1:b2:c3` | `iw scan` |
+| `ssid` | `CorpNet` | `iw scan` |
+| `freq` | `5180` | `iw scan` — separates bands |
+| `rssi` | `-67.0` | the measurement |
+
+---
+
+## ⚠ Settle the mount angle before drilling anything
+
+The Mid-360's vertical FOV is **−7° to +52°** — tilted *upward*. Mounted level at
+~0.40 m, its lowest ray does not reach the floor until:
+
+```
+0.40 / tan(7°) ≈ 3.3 m ahead
+```
+
+Everything nearer than that is invisible: the floor, curbs, chair legs, descending
+steps. **This fails silently** — the map looks excellent and the robot walks into
+things.
+
+| Mount pitch | Lowest ray | Ground contact | Upper FOV kept |
+|---|---|---|---|
+| 0° (level) | −7° | 3.26 m | 52° |
+| 15° | −22° | 0.99 m | 37° |
+| **22°** | **−29°** | **0.72 m** | **30°** |
+| 30° | −37° | 0.53 m | 22° |
+
+Recompute for your actual sensor height as `h / tan(pitch + 7°)`. ~22° is the
+indoor sweet spot. Declare the angle **in the URDF** so the TF tree carries it —
+not in `MID360_config.json`'s extrinsics — so SLAM and both costmaps agree on
+where gravity points.
+
+---
+
+## Build sequence
+
+Ordered by dependency. The survey capability lands at phase 5, before autonomy, so
+there is a working deliverable even if Nav2 tuning stalls.
+
+- [ ] **00 · Access and inventory** — SSH in, change stock password, run `tools/go2_survey.sh`
+      *Exit: `ros2 topic echo /sportmodestate` streams live data*
+- [ ] **01 · Choose the ROS runtime** — Humble in a `--network host` container over native Foxy
+      *Exit: unitree_ros2 topics visible from inside the container*
+- [ ] **02 · Mid-360 bring-up** — Livox-SDK2 + `livox_ros_driver2`, resolve the subnet collision
+      *Exit: `/livox/lidar` renders a recognisable room in RViz*
+- [ ] **03 · Mount geometry and TF tree** — pitch ~22° down, write the URDF
+      *Exit: floor reads flat and level in `base_link`; walls vertical*
+- [ ] **04 · LiDAR-inertial SLAM** — FAST-LIO2 with Mid-360 params
+      *Exit: walk a loop and return, drift under ~1% of path length*
+- [ ] **05 · WiFi survey node** ← **deliverable**
+      *Exit: per-SSID heatmap of one floor, registered to the SLAM map*
+- [ ] **06 · Velocity bridge** — `/cmd_vel` → `Move(vx, vy, vyaw)`, with a watchdog
+      *Exit: robot tracks `/cmd_vel`; halts within 300 ms of silence*
+- [ ] **07 · Depth camera and costmaps** — decimate hard, feed the local costmap
+      *Exit: a box on the floor at 0.5 m appears in the local costmap*
+- [ ] **08 · Nav2 and the waypoint route** — the long pole
+      *Exit: unattended 20-waypoint route, zero interventions, twice*
+
+Full plan with diagrams and effort estimates: [`docs/plan.md`](docs/plan.md)
+
+### On exploration
+
+Resist live frontier exploration. Teleop-drive the map once with a human present,
+save it, then survey against known geometry. Mapping and surveying in one
+autonomous pass is where projects like this stall.
+
+---
+
+## Risks
+
+| | Risk | Mitigation |
+|---|---|---|
+| **R1** | **LiDAR sees through glass.** Glass doors and partitions return nothing, won't appear in the map, and Nav2 will plan through them. | Annotate glass as keep-out zones in the saved map. Keep the collision monitor tight. |
+| **R2** | **Scanning tears down your own WiFi link.** A full `iw scan` channel-hops and drops association for 2–5 s — losing your SSH session mid-survey. | A second USB adapter dedicated to scanning. ~$20, eliminates the failure class. |
+| **R3** | **Mount angle blinds the near field.** Invisible in map quality; shows up only as collisions. | Phase 3, resolved once, in the URDF. |
+| **R4** | **Scan duration smears samples.** 2–5 s at 0.5 m/s averages 1–2.5 m of travel into one "point". | Stop-and-scan at waypoints. |
+| **R5** | **RSSI depends on heading.** Chassis and battery attenuate; 5–10 dB across 180° of rotation. | Rotate-and-average, 4 scans at 90°. At minimum log yaw. |
+| **R6** | **Battery won't cover a floor.** 1–1.5 h walking, less with full compute. | Resumable route segments with a persisted index. |
+| **R7** | **0.40 m is not user height.** Relative coverage transfers; absolute dBm at 1–1.5 m does not. | Only if you need absolute numbers — a light mast for the antenna alone. |
+
+---
+
+## Quickstart (phase 0)
+
+Static IP on your wired adapter, then SSH:
+
+```powershell
+# Windows, PowerShell as admin
+Get-NetAdapter                    # find the right InterfaceAlias
+New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.123.222 -PrefixLength 24
+```
+
+```bash
+ping 192.168.123.18
+ssh unitree@192.168.123.18        # stock password: 123 — change it immediately
+```
+
+| Address | What | Access |
+|---|---|---|
+| `192.168.123.18` | Jetson Orin — dev target | `unitree` / `123` |
+| `192.168.123.161` | MCU / motion controller | no SSH |
+| `192.168.123.222` | your laptop | — |
+
+If ping fails it's almost always Windows routing over WiFi instead of the wired
+link. Turn WiFi off for the first connection.
+
+Then run the inventory script on the robot:
+
+```bash
+bash tools/go2_survey.sh 2>&1 | tee docs/survey-$(date +%F).txt
+```
+
+It is read-only and changes nothing.
+
+## Unknowns to resolve in phase 0
+
+| Question | How to answer | What it decides |
+|---|---|---|
+| JetPack / Ubuntu / ROS version | `lsb_release -a` | Foxy native vs. Humble container |
+| Docker present, NVIDIA runtime? | `docker info` | Whether phase 1 is easy or a build |
+| Jetson interface name | `ip -brief addr` | `CYCLONEDDS_URI` — wrong value gives silent zero topics |
+| Mid-360's real IP | `tcpdump -n udp` | `MID360_config.json` and the alias subnet |
+| librealsense installed? | `rs-enumerate-devices` | Phase 7 effort |
+| Free disk for maps and bags | `df -h /` | Whether raw clouds can be recorded |
+
+---
+
+## Planned layout
+
+```
+go2_survey_bringup/      launch files + params
+go2_survey_wifi/         iw scan + TF pose join → CSV
+go2_survey_bridge/       /cmd_vel → SportClient, with watchdog
+go2_survey_description/  URDF, 22° LiDAR mount
+tools/                   inventory + heatmap scripts
+config/                  MID360_config.json, FAST-LIO2 params, Nav2 params
+docs/                    plan, survey outputs, maps
+```
+
+Packages get created in phase 2 once the ROS runtime is settled — no point
+committing to an `ament_python` vs `ament_cmake` split before phase 0 answers
+which distro we're on.
+
+## Upstream dependencies
+
+- [unitree_sdk2](https://github.com/unitreerobotics/unitree_sdk2) — `SportClient`, low-level control
+- [unitree_ros2](https://github.com/unitreerobotics/unitree_ros2) — DDS bridge (Foxy / Humble)
+- [Livox-SDK2](https://github.com/Livox-SDK/Livox-SDK2) + [livox_ros_driver2](https://github.com/Livox-SDK/livox_ros_driver2) — Mid-360
+- [FAST_LIO](https://github.com/hku-mars/FAST_LIO) — LiDAR-inertial odometry
+- [Nav2](https://github.com/ros-navigation/navigation2) — planning and control

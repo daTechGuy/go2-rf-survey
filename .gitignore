@@ -1,0 +1,55 @@
+# ---- ROS 2 / colcon ----
+build/
+install/
+log/
+.colcon/
+*.colcon_install_layout
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# ---- C++ / CMake ----
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.o
+*.so
+*.a
+
+# ---- large recorded data ----
+# Survey CSVs are the deliverable and SHOULD be committed (they're small text).
+# Raw sensor data is not — a few minutes of Mid-360 is gigabytes.
+*.bag
+*.db3
+*.mcap
+rosbag2_*/
+*.pcd
+*.ply
+*.las
+*.laz
+maps/*.pgm
+data/raw/
+
+# ---- credentials ----
+# Never commit the robot's network config with real keys or passwords.
+*.pem
+*.key
+secrets.yaml
+.env
+
+# ---- editors / OS ----
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+Desktop.ini
