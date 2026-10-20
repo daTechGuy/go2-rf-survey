@@ -1,0 +1,56 @@
+=== go2-rf-survey — phase 0 inventory ===
+Date:    2026-10-20
+Host:    unitree@192.168.123.18 (eth0, direct wired link from laptop .222)
+Method:  manual read-only inventory over SSH (subset of tools/go2_survey.sh).
+         Connection test only — no motion commands issued.
+Caveats: LiDAR (Mid-360) and RealSense D435i NOT connected yet.
+         Stock password left unchanged (demo robot).
+         /sportmodestate live-stream exit check NOT yet run.
+
+=== OS / kernel ===
+Distributor ID: Ubuntu
+Description:    Ubuntu 20.04.5 LTS
+Release:        20.04
+Codename:       focal
+5.10.104-tegra
+
+=== ROS ===
+/opt/ros: foxy  noetic
+ROS_DISTRO=            (nothing sourced)
+
+=== Docker ===
+Docker version 24.0.5, build 24.0.5-0ubuntu1~20.04.1
+# docker info as unitree (no daemon access without sudo/group):
+server= runtimes=null
+# sudo docker info --format '{{json .Runtimes}}':
+{"io.containerd.runc.v2":{"path":"runc"},"nvidia":{"path":"nvidia-container-runtime"},"runc":{"path":"runc"}}
+
+=== Network interfaces (ip -brief addr) ===
+lo               UNKNOWN        127.0.0.1/8 ::1/128
+dummy0           DOWN
+eth0             UP             192.168.123.18/24 fe80::d150:4901:5a1a:cb5/64
+docker0          DOWN           172.17.0.1/16
+
+=== Disk free (df -h /) ===
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p1  469G   21G  429G   5% /
+
+=== Jetson / L4T (head -1 /etc/nv_tegra_release) ===
+# R35 (release), REVISION: 3.1, GCID: 32827747, BOARD: t186ref, EABI: aarch64, DATE: Sun Mar 19 15:19:21 UTC 2023
+
+=== Resolved decisions ===
+D1  Humble in a Docker container, not stock Foxy.
+    - Foxy present but EOL; noetic also present.
+    - Docker 24.0.5 with the NVIDIA runtime REGISTERED -> phase 1 is the easy
+      path: `--runtime nvidia`, no nvidia-container-toolkit install needed.
+JetPack 5.1.1 (L4T R35.3.1), kernel 5.10.104-tegra.
+    - WiFi/BLE adapter must have an in-tree 5.10 driver: MT7612U yes,
+      MT7921AU (needs 5.18) no. 6 GHz / WiFi-6E would require JetPack 6.
+CYCLONEDDS interface = eth0 (holds 192.168.123.18/24). This is the IFACE value
+    for docker/run.sh and CYCLONEDDS_URI; a wrong value gives silent empty topics.
+Disk: 429 GB free -> ample for maps and raw bags.
+
+=== Still open (need hardware plugged in) ===
+- Mid-360 real IP (D2 alias subnet) — sensor not connected.
+- RealSense present? (rs-enumerate-devices) — camera not connected.
+- /sportmodestate streams live — not yet verified (needs RMW/unitree_ros2 env).

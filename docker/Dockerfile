@@ -42,10 +42,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip3 install --no-cache-dir numpy scipy matplotlib
 
 # --- Livox SDK2 --------------------------------------------------------------
-# Prerequisite for livox_ros_driver2. Pinned to a commit rather than a moving
+# Prerequisite for livox_ros_driver2. Pinned rather than tracking a moving
 # branch: a silent upstream change here would surface as a LiDAR that no
 # longer connects, which is an awful thing to debug mid-survey.
-ARG LIVOX_SDK2_REF=v1.2.5
+#
+# The SDK and the driver below must be a MATCHED pair. v1.2.5 is too old for
+# the 1.2.6 driver: the driver references kLivoxLidarTypeMid360s, which the SDK
+# only gained in v1.3.x. Bump both together, never one alone.
+ARG LIVOX_SDK2_REF=v1.3.1
 RUN git clone --depth 1 --branch ${LIVOX_SDK2_REF} \
       https://github.com/Livox-SDK/Livox-SDK2.git /tmp/Livox-SDK2 \
     && cmake -S /tmp/Livox-SDK2 -B /tmp/Livox-SDK2/build \
@@ -59,14 +63,22 @@ ENV WS=/opt/go2_ws
 WORKDIR ${WS}/src
 
 # livox_ros_driver2 uses its own build script rather than plain colcon.
-RUN git clone --depth 1 https://github.com/Livox-SDK/livox_ros_driver2.git
+# Pinned to the 1.2.6 RELEASE: its main branch references double-echo SDK
+# symbols not present in any Livox-SDK2 release, so main only builds against
+# SDK master. 1.2.6 pairs with SDK2 v1.3.1 above.
+RUN git clone --depth 1 --branch 1.2.6 https://github.com/Livox-SDK/livox_ros_driver2.git
 
-# FAST-LIO2 with its ikd-Tree submodule.
-RUN git clone --depth 1 --recursive https://github.com/hku-mars/FAST_LIO.git
+# FAST-LIO2 with its ikd-Tree submodule. The ROS2 branch is REQUIRED: the
+# default branch is ROS 1 only (find_package(catkin)) and cannot build on
+# Humble.
+RUN git clone --depth 1 --branch ROS2 --recursive https://github.com/hku-mars/FAST_LIO.git
 
 WORKDIR ${WS}
+# fast_lio's ROS2 branch does find_package(livox_ros_driver2 REQUIRED), so the
+# driver's install must be sourced before fast_lio is configured.
 RUN source /opt/ros/humble/setup.bash \
     && (cd src/livox_ros_driver2 && ./build.sh humble) \
+    && source install/setup.bash \
     && colcon build --symlink-install \
          --packages-select fast_lio \
          --cmake-args -DCMAKE_BUILD_TYPE=Release

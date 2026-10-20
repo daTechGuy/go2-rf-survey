@@ -18,20 +18,21 @@ and tested; everything remaining needs real sensor data.
 
 | Phase | State |
 |---|---|
-| 00 Access and inventory | ⬜ **blocked — the next action** |
-| 01 ROS runtime | ⬜ depends on 00 |
-| 02 Mid-360 bring-up | ⬜ |
-| 03 Mount and TF | 🟨 code written, needs measurements |
-| 04 SLAM | 🟨 config written, needs tuning on hardware |
-| 05 **WiFi survey** | ✅ written + tested — the deliverable |
-| 06 Velocity bridge | ✅ written + tested |
-| 07 Depth and costmaps | ⬜ |
+| 00 Access and inventory | 🟨 SSH + inventory done 2026-10-20 (eth0, NVIDIA runtime present); password left at default (demo), /sportmodestate not yet verified |
+| 01 ROS runtime | 🟨 container build fixed (ROS2/SDK-driver pairing, 2026-10-20), rebuilding |
+| 02 Mid-360 bring-up | 🟨 LiDAR found at `192.168.123.20` (same subnet, no alias); config set; driver not yet launched |
+| 03 Mount and TF | 🟨 mounted nose-down; exact pitch still to measure for URDF |
+| 04 SLAM | 🟨 config written, needs the container + hardware run |
+| 05 **WiFi survey** | ✅ written + tested — the deliverable (deferred; current goal is map-only) |
+| 06 Velocity bridge | ✅ written + tested (not used yet; first motion was via vendor SDK) |
+| 07 Depth and costmaps | 🟨 RealSense D435i present on USB (`8086:0b3a`); not yet brought up |
 | 08 Nav2 | ⬜ |
 
-**Next action:** SSH to the robot, run `bash tools/go2_survey.sh`, commit the
-output as `docs/survey-YYYY-MM-DD.txt`. It answers D1 and supplies the real
-network interface name and LiDAR IP, which several configs currently have as
-placeholders.
+**Next action:** finish the container build (fixes in `docker/Dockerfile`,
+2026-10-20), then start it (`IFACE=eth0 bash docker/run.sh`), launch the Livox
+driver, confirm `/livox/lidar`, and run FAST-LIO2 to map the room (teleop via
+remote, collision avoidance on). See `docs/bringup-log-2026-10-20.md` for the
+full session state and the internet-sharing + robot-local config details.
 
 ## Decisions already made — don't relitigate
 
@@ -41,7 +42,8 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
   June 2023. *Revisit only if phase 0 shows Docker absent or without the
   NVIDIA runtime.*
 - **D2** — Alias a second IP on the Jetson rather than reflashing the Mid-360.
-  Non-destructive and reversible.
+  Non-destructive and reversible. *(Moot on this unit: the Mid-360 is already at
+  `192.168.123.20`, same subnet as the Jetson — no alias needed. 2026-10-20.)*
 - **D3** — Pre-mapped waypoints, not live frontier exploration. Mapping and
   surveying in one autonomous pass is where projects of this shape stall.
 - **D4** — Stop-and-scan, timestamped at scan *completion*. A moving scan

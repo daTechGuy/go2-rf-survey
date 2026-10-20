@@ -10,17 +10,21 @@ post-processing halves are written and tested — see
 
 > ### ▶ Resume here
 >
-> **Next action:** SSH to the robot and run the inventory script.
+> **Phase 0 done** (2026-10-20, `docs/survey-2026-10-20.txt`): SSH over `eth0`
+> confirmed, Docker 24.0.5 with the NVIDIA runtime registered, Foxy stock →
+> Humble container ([D1](docs/plan.md)), kernel 5.10 / JetPack 5.1.1, 429 GB
+> free.
+>
+> **Next action:** connect the Mid-360, then build and launch the container:
 >
 > ```bash
 > ssh unitree@192.168.123.18
 > git clone https://github.com/daTechGuy/go2-rf-survey.git && cd go2-rf-survey
-> bash tools/go2_survey.sh 2>&1 | tee docs/survey-$(date +%F).txt
+> docker build -t go2-survey:humble docker/ && IFACE=eth0 bash docker/run.sh
 > ```
 >
-> That output answers [D1](docs/plan.md) and supplies the real network
-> interface name and LiDAR IP — several configs hold placeholders until it
-> exists. Full steps: **[docs/RUNBOOK.md](docs/RUNBOOK.md)**.
+> The DDS interface is `eth0`; the Mid-360's real IP is the one placeholder left
+> until the sensor is plugged. Full steps: **[docs/RUNBOOK.md](docs/RUNBOOK.md)**.
 >
 > **No robot to hand?** Part 0 of the runbook works on any machine:
 > `python tools/run_tests.py`, then render a heatmap from synthetic data.
@@ -248,8 +252,10 @@ where gravity points.
 Ordered by dependency. The survey capability lands at phase 5, before autonomy, so
 there is a working deliverable even if Nav2 tuning stalls.
 
-- [ ] **00 · Access and inventory** — SSH in, change stock password, run `tools/go2_survey.sh`
-      *Exit: `ros2 topic echo /sportmodestate` streams live data*
+- [~] **00 · Access and inventory** — SSH in, change stock password, run `tools/go2_survey.sh`
+      *Done 2026-10-20 (`docs/survey-2026-10-20.txt`): eth0, Docker + NVIDIA
+      runtime, kernel 5.10 / JetPack 5.1.1. Password left at default (demo);
+      `ros2 topic echo /sportmodestate` stream not yet verified.*
 - [ ] **01 · Choose the ROS runtime** — Humble in a `--network host` container over native Foxy
       *Exit: unitree_ros2 topics visible from inside the container*
 - [ ] **02 · Mid-360 bring-up** — Livox-SDK2 + `livox_ros_driver2`, resolve the subnet collision
