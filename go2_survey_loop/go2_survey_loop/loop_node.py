@@ -223,9 +223,15 @@ class LoopNode(Node):
             self._publish(cmd.vx, cmd.vyaw)
 
         if cmd.state != self._last_state:
-            log = self.get_logger().warning if cmd.state in (State.PAUSED, State.ABORTED) \
-                else self.get_logger().info
-            log(f"{cmd.state.value}: {cmd.reason}  ({sensors})")
+            # One call site per severity. rclpy's logger raises "Logger
+            # severity cannot be changed between calls" if a single line logs
+            # at different levels -- which crashed this node on its first
+            # pause or stop when the level was chosen in a variable.
+            text = f"{cmd.state.value}: {cmd.reason}  ({sensors})"
+            if cmd.state in (State.PAUSED, State.ABORTED):
+                self.get_logger().warning(text)
+            else:
+                self.get_logger().info(text)
             self._last_state = cmd.state
 
         tag = "would send" if self.dry_run else "send"
@@ -297,7 +303,10 @@ class LoopNode(Node):
         oa, ca = self._ages(self._now())
         ok, msg = self.mission.resume(oa, ca, self._front, self._near)
         res.success, res.message = ok, msg
-        (self.get_logger().info if ok else self.get_logger().warning)(f"resume: {msg}")
+        if ok:                                   # separate sites: see _tick
+            self.get_logger().info(f"resume: {msg}")
+        else:
+            self.get_logger().warning(f"resume: {msg}")
         return res
 
     def destroy_node(self) -> bool:

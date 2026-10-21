@@ -81,7 +81,9 @@ the aisle** — then:
 
 ```bash
 # inside the container (root@ubuntu:/workspace#)
-PYTHONPATH=/workspace/go2_survey_loop python3 -m go2_survey_loop.loop_node \
+# Keep ':$PYTHONPATH' -- replacing it instead of prepending hides ROS
+# ("No module named 'rclpy'").
+PYTHONPATH=/workspace/go2_survey_loop:$PYTHONPATH python3 -m go2_survey_loop.loop_node \
     --ros-args -p shape:=out_and_back -p length:=3.0 > /tmp/loop.log 2>&1 &
 sleep 3
 timeout 3 ros2 topic echo /go2_loop/status
@@ -119,7 +121,7 @@ place of roughly 20°, then a stop. Open floor, you on the remote.
 2. Container — start the bridge. ⚠ About 1 s after it starts it sends
    **BalanceStand** (a posture command, no walking); that is expected.
    ```bash
-   PYTHONPATH=/workspace/go2_survey_bridge python3 -m go2_survey_bridge.bridge_node \
+   PYTHONPATH=/workspace/go2_survey_bridge:$PYTHONPATH python3 -m go2_survey_bridge.bridge_node \
        --ros-args -p max_vx:=0.3 -p max_vyaw:=0.5 > /tmp/bridge.log 2>&1 &
    sleep 3; tail -5 /tmp/bridge.log         # "bridge up: /cmd_vel -> /api/sport/request"
    ```
@@ -140,7 +142,7 @@ Smallest possible real route. Clear ~1.5 m around it. You on the remote.
 2. Bridge running (stage 1).
 3. Container:
    ```bash
-   PYTHONPATH=/workspace/go2_survey_loop python3 -m go2_survey_loop.loop_node \
+   PYTHONPATH=/workspace/go2_survey_loop:$PYTHONPATH python3 -m go2_survey_loop.loop_node \
        --ros-args -p shape:=out_and_back -p length:=1.0 -p dry_run:=false \
        > /tmp/loop.log 2>&1 &
    sleep 3
