@@ -76,10 +76,16 @@ RUN git clone --depth 1 --branch ROS2 --recursive https://github.com/hku-mars/FA
 WORKDIR ${WS}
 # fast_lio's ROS2 branch does find_package(livox_ros_driver2 REQUIRED), so the
 # driver's install must be sourced before fast_lio is configured.
+#
+# NO --symlink-install here: livox's build.sh runs a full-workspace colcon
+# build, so fast_lio is already installed (regular copy) by the time this runs.
+# --symlink-install would then fail trying to replace that directory with a
+# symlink ("existing path cannot be removed: Is a directory"). We never edit
+# fast_lio's source, so symlink install buys nothing anyway.
 RUN source /opt/ros/humble/setup.bash \
     && (cd src/livox_ros_driver2 && ./build.sh humble) \
     && source install/setup.bash \
-    && colcon build --symlink-install \
+    && colcon build \
          --packages-select fast_lio \
          --cmake-args -DCMAKE_BUILD_TYPE=Release
 
