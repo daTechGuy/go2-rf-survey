@@ -1,8 +1,31 @@
 # Autonomous loop — staged rollout
 
-`go2_survey_loop` walks the robot around a rectangle you specify, on its own,
-stopping for anything in its way. This page is the order to bring it up in.
-**Do not skip a stage.** Each one proves the thing the next one relies on.
+`go2_survey_loop` walks the robot along a route you specify, on its own,
+stopping for anything in its way. Two route shapes:
+
+- **`out_and_back`** — straight out `length` m, turn round in place, back to
+  the start. For a room with one clear aisle. **The classroom route:**
+  `shape:=out_and_back length:=3.0` (10 ft in from the door).
+- **`rectangle`** — `length` ahead, then `width` to the side, back to start.
+  Needs open floor on both axes.
+
+This page is the order to bring it up in. **Do not skip a stage.** Each one
+proves the thing the next one relies on.
+
+## Will it fit? (tight aisles)
+
+The robot stops if anything is within **0.55 m of its centre**, in any
+direction. So the route needs **more than ~1.1 m of clear width** along its
+whole length, and especially at the far end where it turns round. In a 1 m
+aisle between desks it will refuse to start (`path blocked (near=...)`) —
+that is the system working, not a fault: turning round in that gap would
+brush the desks.
+
+If the aisle is tight, choose a turn-round spot in open floor (the front of
+the room, a gap by the board) and set `length` to reach it. Stage 0 measures
+the real clearance with the robot standing still — check it before anything
+moves. Shrinking `clearance_radius` is possible but cuts the margin while
+turning (the body is ~0.7 m long); don't go below 0.45 without a reason.
 
 ## How it is kept safe
 
@@ -26,15 +49,26 @@ It is a *stop* system, not a planner: it never steers around anything. If
 something is in the way it stops and waits for you.
 
 The node uses the robot's own LiDAR stack (`/utlidar/robot_odom`,
-`/utlidar/cloud_deskewed` — already in the `odom` frame), so it runs inside
-the Humble container with no extra build. The bridge needs Unitree's message
-types and runs on the host.
+`/utlidar/cloud_deskewed` — already in the `odom` frame). Both it and the
+bridge run inside the Humble container: the image carries Unitree's
+`unitree_api` / `unitree_go` messages, built from the official
+`unitree_ros2` repo (see `docker/Dockerfile`).
 
 ## Getting it onto the robot
 
 ```bash
 # robot host shell (unitree@ubuntu)
-cd ~/go2-rf-survey && git fetch origin && git checkout origin/main -- go2_survey_loop
+cd ~/go2-rf-survey && git fetch origin
+git checkout origin/main -- go2_survey_loop go2_survey_bridge docker
+docker build -t go2-survey:humble docker/        # adds the Unitree message layer
+IFACE=eth0 bash docker/run.sh
+```
+
+The rebuild only adds the new layer at the end (everything before it is
+cached). Inside the container, confirm the messages are there:
+
+```bash
+python3 -c "import unitree_api.msg; print('unitree_api ok')"
 ```
 
 ## Stage 0 — dry run, robot does not move
@@ -42,10 +76,13 @@ cd ~/go2-rf-survey && git fetch origin && git checkout origin/main -- go2_survey
 Proves the sensors feed it, its own legs are not "obstacles", it finds the
 floor, and it detects a real obstacle. Robot can be standing or lying down.
 
+Put the robot where the route will start — **in the doorway, facing down
+the aisle** — then:
+
 ```bash
 # inside the container (root@ubuntu:/workspace#)
 PYTHONPATH=/workspace/go2_survey_loop python3 -m go2_survey_loop.loop_node \
-    --ros-args -p length:=1.0 -p width:=1.0 > /tmp/loop.log 2>&1 &
+    --ros-args -p shape:=out_and_back -p length:=3.0 > /tmp/loop.log 2>&1 &
 sleep 3
 timeout 3 ros2 topic echo /go2_loop/status
 ```
@@ -56,6 +93,10 @@ Expect `idle | odom 0.0xs old, lidar 0.0xs old, floor -0.0x, front 0, near 0`.
   seeing itself — tell Claude the numbers; the body box needs enlarging.
 - Hold a box ~0.6 m in front of the robot's nose: `front` should jump well
   above 5. Move it beside the robot within half a metre: `near` should rise.
+- **In the doorway, `near` is the aisle check.** Non-zero there means desks or
+  the door frame are within 0.55 m — see "Will it fit?" above. Carry the robot
+  (or walk it on the remote) to the planned turn-round spot and read `near`
+  there too: that is where clearance matters most.
 
 Then a dry mission:
 
@@ -68,41 +109,56 @@ kill %1
 
 `would send` means it computed a command and published nothing. Nothing moves.
 
-## Stage 1 — bridge only, robot does not walk
+## Stage 1 — bridge only, robot turns on the spot
 
 Proves `/cmd_vel` reaches the robot through the bridge, and that the bridge's
-watchdog stops it. Follow the existing bridge procedure in the README
-("Verify the watchdog before trusting this to a planner"), robot on a stand or
-held, with a hand-published `/cmd_vel`.
+**watchdog** stops it when commands stop. The only motion is a slow turn in
+place of roughly 20°, then a stop. Open floor, you on the remote.
 
-*Pending: confirm Unitree's `unitree_api` messages exist on the host (see
-below) — that decides how the bridge is started.*
+1. Remote: L2 + A, then a **single** START (robot "breathes").
+2. Container — start the bridge. ⚠ About 1 s after it starts it sends
+   **BalanceStand** (a posture command, no walking); that is expected.
+   ```bash
+   PYTHONPATH=/workspace/go2_survey_bridge python3 -m go2_survey_bridge.bridge_node \
+       --ros-args -p max_vx:=0.3 -p max_vyaw:=0.5 > /tmp/bridge.log 2>&1 &
+   sleep 3; tail -5 /tmp/bridge.log         # "bridge up: /cmd_vel -> /api/sport/request"
+   ```
+3. Send a slow turn for 2 s, then **stop sending** — the watchdog must halt it:
+   ```bash
+   timeout 2 ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist '{angular: {z: 0.2}}'
+   sleep 1; grep -i watchdog /tmp/bridge.log | tail -2
+   ```
+   Pass: it turned ~20° left, stopped within a moment of the command ending,
+   and the log shows `watchdog: no /cmd_vel for ... -- stopping`.
+   **If it keeps turning after the command ends, L2 + START and stop here.**
 
-## Stage 2 — live, 1 m × 1 m, open floor
+## Stage 2 — live, 1 m out-and-back, open floor
 
-Smallest possible real loop. Clear 2 m around it. You on the remote.
+Smallest possible real route. Clear ~1.5 m around it. You on the remote.
 
 1. Remote: L2 + A, then a **single** START (robot "breathes").
 2. Bridge running (stage 1).
 3. Container:
    ```bash
    PYTHONPATH=/workspace/go2_survey_loop python3 -m go2_survey_loop.loop_node \
-       --ros-args -p length:=1.0 -p width:=1.0 -p dry_run:=false > /tmp/loop.log 2>&1 &
+       --ros-args -p shape:=out_and_back -p length:=1.0 -p dry_run:=false \
+       > /tmp/loop.log 2>&1 &
    sleep 3
    ros2 service call /go2_loop/start std_srvs/srv/Trigger
    ```
-4. Watch it: forward 1 m, turn left, 1 m, left, 1 m, left, home, stop.
+4. Watch it: forward 1 m, turn round in place (one direction, no back-and-forth),
+   walk back, stop.
 5. Abort any time: `ros2 service call /go2_loop/stop std_srvs/srv/Trigger`,
    or **L2 + START** on the remote.
 
 Then walk in front of it mid-leg: it must stop and stay stopped until
 `ros2 service call /go2_loop/resume std_srvs/srv/Trigger`.
 
-## Stage 3 — the classroom loop, recording the map
+## Stage 3 — the classroom route, recording the map
 
-Same as stage 2 with the real size, and `ros2 bag record` running in a second
-container shell (see `bringup-log` / `bag_to_map.py`). One run gives the
-autonomous demo and the floorplan.
+Same as stage 2 with `length:=3.0` (10 ft), starting in the doorway facing
+down the aisle, and `ros2 bag record` running in a second container shell
+(see `bag_to_map.py`). One run gives the autonomous demo and the floorplan.
 
 ## Parameters
 
@@ -110,8 +166,10 @@ Typed as their defaults (`length:=4.0`, not `length:=4`).
 
 | Param | Default | |
 |---|---|---|
-| `length`, `width` | 0.0 | **required**, metres; `length` is along the start heading |
-| `turn` | `left` | which way the corners go |
+| `shape` | `rectangle` | or `out_and_back` |
+| `length` | 0.0 | **required**, metres, along the start heading |
+| `width` | 0.0 | rectangle only, metres to the side |
+| `turn` | `left` | rectangle only: which way the corners go |
 | `laps` | 1 | |
 | `dry_run` | **true** | `false` to actually publish |
 | `max_vx` / `max_vyaw` | 0.30 / 0.50 | |

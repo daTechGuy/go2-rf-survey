@@ -49,6 +49,35 @@ def rectangle_local(length: float, width: float, turn: str = "left", laps: int =
     return lap * laps
 
 
+def out_and_back_local(length: float, laps: int = 1):
+    """Straight out ``length`` along the start heading, then back to the start.
+
+    For rooms with one clear aisle and no space for a rectangle: it needs only
+    the aisle, plus room at the far end to turn round in place (the follower
+    turns in place whenever the next waypoint is well off the nose).
+    """
+    if not length > 0:
+        raise ValueError(f"length must be positive, got {length}")
+    if laps < 1:
+        raise ValueError(f"laps must be >= 1, got {laps}")
+    return [(length, 0.0), (0.0, 0.0)] * laps
+
+
+def plan_local(shape: str, length: float, width: float = 0.0, turn: str = "left",
+               laps: int = 1):
+    """Waypoints for a named route shape, in the start frame."""
+    if shape == "rectangle":
+        return rectangle_local(length, width, turn, laps)
+    if shape == "out_and_back":
+        return out_and_back_local(length, laps)
+    raise ValueError(f"shape must be 'rectangle' or 'out_and_back', got {shape!r}")
+
+
+def route_extent(shape: str, length: float, width: float = 0.0) -> float:
+    """Furthest any waypoint gets from the start -- the basis of the geofence."""
+    return math.hypot(length, width) if shape == "rectangle" else length
+
+
 def to_world(start: Pose2D, local_points):
     """Start-frame points -> odometry-frame points."""
     c, s = math.cos(start.yaw), math.sin(start.yaw)

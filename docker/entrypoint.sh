@@ -6,13 +6,18 @@ set -e
 source /opt/ros/humble/setup.bash
 [ -f /opt/go2_ws/install/setup.bash ] && source /opt/go2_ws/install/setup.bash
 
-# unitree_ros2 is built on the host and bind-mounted; it provides unitree_api,
-# without which the bridge cannot start.
+# unitree_api / unitree_go: baked into the image (see Dockerfile), or a
+# bind-mounted unitree_ros2 workspace if one was supplied. Without one of the
+# two, go2_survey_bridge cannot import unitree_api.
+if [ -f /opt/unitree_msgs/setup.bash ]; then
+  source /opt/unitree_msgs/setup.bash
+fi
 if [ -f "${UNITREE_ROS2_WS:-/unitree_ros2}/install/setup.bash" ]; then
   source "${UNITREE_ROS2_WS:-/unitree_ros2}/install/setup.bash"
-else
-  echo "WARN: unitree_ros2 not found at ${UNITREE_ROS2_WS:-/unitree_ros2}." >&2
-  echo "      go2_survey_bridge will fail to import unitree_api." >&2
+fi
+if ! python3 -c "import unitree_api.msg" >/dev/null 2>&1; then
+  echo "WARN: unitree_api messages not available; go2_survey_bridge will not start." >&2
+  echo "      Rebuild the image (docker build -t go2-survey:humble docker/)." >&2
 fi
 
 # This repo's own packages, if they have been built.

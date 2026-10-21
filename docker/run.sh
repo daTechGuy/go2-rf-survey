@@ -50,11 +50,11 @@ ARGS=(
   -w /workspace
 )
 
+# Optional: the image already carries unitree_api / unitree_go (Dockerfile).
+# A host unitree_ros2 workspace is only mounted if one exists -- e.g. to try a
+# newer message set without rebuilding.
 if [ -d "$UNITREE_ROS2_WS" ]; then
   ARGS+=(-v "${UNITREE_ROS2_WS}:/unitree_ros2:ro" -e UNITREE_ROS2_WS=/unitree_ros2)
-else
-  echo "WARN: no unitree_ros2 at ${UNITREE_ROS2_WS}; the bridge will not start." >&2
-  echo "      Set UNITREE_ROS2_WS=/path/to/unitree_ros2 if it lives elsewhere." >&2
 fi
 
 # Survey CSVs are the deliverable. Keep them outside the container.

@@ -38,9 +38,10 @@ try:
     from unitree_api.msg import Request
 except ImportError as exc:  # pragma: no cover - environment, not logic
     raise ImportError(
-        "unitree_api messages not found. This package needs unitree_ros2 on "
-        "the AMENT_PREFIX_PATH:\n"
-        "    source ~/unitree_ros2/setup.sh\n"
+        "unitree_api messages not found. Inside the go2-survey:humble "
+        "container they are baked into the image (/opt/unitree_msgs) -- "
+        "rebuild it if this appears there. Elsewhere, source a unitree_ros2 "
+        "workspace first.\n"
         "See docs/plan.md D1 for the runtime decision."
     ) from exc
 

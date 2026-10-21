@@ -120,6 +120,7 @@ class Mission:
         self.state = State.RUNNING
         self.reason = "started"
         self._turning = False
+        self._turn_dir = 0.0            # +1 CCW / -1 CW once a turn starts
         self._ended_at: float | None = None
         self._clear_since: float | None = None
 
@@ -150,7 +151,30 @@ class Mission:
         self.reason = reason
         self._clear_since = None
         self._turning = False
+        self._turn_dir = 0.0
         return Command(0.0, 0.0, True, State.PAUSED, reason)
+
+    def _latch_turn(self, pose: Pose2D, vyaw: float) -> float:
+        """Commit to one turn direction near the +/-pi seam.
+
+        A target directly behind the robot -- the far end of an out-and-back --
+        sits at +/-pi of heading error, where a few hundredths of a radian of
+        odometry noise decide whether the short way round is left or right.
+        Without a latch the turn could reverse tick to tick. Once a turn has
+        started, keep its direction while the error is still near the seam.
+        """
+        if not self._turning:
+            self._turn_dir = 0.0
+            return vyaw
+        if self._turn_dir == 0.0:
+            self._turn_dir = math.copysign(1.0, vyaw) if vyaw else 0.0
+            return vyaw
+        tx, ty = self.target
+        err = wrap_angle(math.atan2(ty - pose.y, tx - pose.x) - pose.yaw)
+        if abs(err) > math.pi - self.follow.turn_enter \
+                and math.copysign(1.0, vyaw) != self._turn_dir:
+            return -vyaw
+        return vyaw
 
     def abort(self, now: float, reason: str = "stopped by operator") -> Command:
         return self._end(State.ABORTED, reason, now)
@@ -169,6 +193,7 @@ class Mission:
         self.state = State.RUNNING
         self.reason = "resumed"
         self._turning = False
+        self._turn_dir = 0.0
         return True, "resumed"
 
     # ------------------------------------------------------------------- step
@@ -225,10 +250,12 @@ class Mission:
         while dist < self.follow.reach_tol:
             self.index += 1
             self._turning = False
+            self._turn_dir = 0.0
             if self.index >= len(self.waypoints):
                 return self._end(State.DONE, "loop complete", now)
             vx, vyaw, self._turning, dist = compute_command(
                 pose, self.target, self.follow, self._turning)
 
+        vyaw = self._latch_turn(pose, vyaw)
         self.reason = self.progress()
         return Command(vx, vyaw, True, State.RUNNING, self.reason)

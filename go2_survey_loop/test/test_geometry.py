@@ -13,7 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from go2_survey_loop.geometry import (  # noqa: E402
-    Pose2D, rectangle_local, to_robot, to_world, wrap_angle, yaw_from_quaternion,
+    Pose2D, out_and_back_local, plan_local, rectangle_local, route_extent,
+    to_robot, to_world, wrap_angle, yaw_from_quaternion,
 )
 
 
@@ -69,6 +70,34 @@ class TestRectangle(unittest.TestCase):
     def test_zero_laps_refused(self):
         with self.assertRaises(ValueError):
             rectangle_local(2, 2, laps=0)
+
+
+class TestOutAndBack(unittest.TestCase):
+    def test_out_and_back(self):
+        self.assertEqual(out_and_back_local(3.0), [(3.0, 0.0), (0.0, 0.0)])
+
+    def test_laps(self):
+        self.assertEqual(len(out_and_back_local(3.0, laps=2)), 4)
+
+    def test_zero_length_refused(self):
+        for bad in (0.0, -1.0):
+            with self.assertRaises(ValueError):
+                out_and_back_local(bad)
+
+    def test_plan_dispatch(self):
+        self.assertEqual(plan_local("out_and_back", 3.0), out_and_back_local(3.0))
+        self.assertEqual(plan_local("rectangle", 4.0, 3.0), rectangle_local(4.0, 3.0))
+
+    def test_out_and_back_ignores_width(self):
+        self.assertEqual(plan_local("out_and_back", 3.0, width=99.0), out_and_back_local(3.0))
+
+    def test_unknown_shape_refused(self):
+        with self.assertRaises(ValueError):
+            plan_local("figure_eight", 3.0, 3.0)
+
+    def test_route_extent(self):
+        self.assertAlmostEqual(route_extent("rectangle", 3.0, 4.0), 5.0)
+        self.assertAlmostEqual(route_extent("out_and_back", 3.0, 99.0), 3.0)
 
 
 class TestTransforms(unittest.TestCase):

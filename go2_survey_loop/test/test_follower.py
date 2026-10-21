@@ -20,7 +20,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from go2_survey_loop.follower import (  # noqa: E402
     Command, FollowerParams, Mission, SafetyParams, State, compute_command,
 )
-from go2_survey_loop.geometry import Pose2D, rectangle_local, to_world  # noqa: E402
+from go2_survey_loop.geometry import (  # noqa: E402
+    Pose2D, out_and_back_local, rectangle_local, to_world,
+)
+import random  # noqa: E402
 
 FP = FollowerParams()
 FRESH = 0.05        # input age that counts as fresh
@@ -152,6 +155,79 @@ class TestClosedLoop(unittest.TestCase):
         start = Pose2D(0, 0, 0)
         _, log = simulate(new_mission(start=start), start, steps=4000)
         self.assertFalse(log[-1][2].publish)
+
+
+class TestOutAndBackLoop(unittest.TestCase):
+    """The classroom route: 3 m (10 ft) out from the door, turn round, home."""
+
+    def mission(self, start=Pose2D(0, 0, 0), length=3.0):
+        return Mission(to_world(start, out_and_back_local(length)), start, 0.0, FP,
+                       SafetyParams(geofence_m=length + 1.0))
+
+    def test_completes_and_returns_to_door(self):
+        start = Pose2D(0, 0, 0)
+        m = self.mission(start)
+        end, log = simulate(m, start, steps=4000)
+        self.assertEqual(m.state, State.DONE, m.reason)
+        self.assertLess(math.hypot(end.x, end.y), FP.reach_tol + 0.05)
+        far = max(p.x for _, p, _ in log)
+        self.assertGreater(far, 3.0 - FP.reach_tol - 0.05)
+
+    def test_never_leaves_the_aisle(self):
+        # with no obstacles to dodge it should stay on the line out and back:
+        # sideways drift is what would put a leg into a desk
+        start = Pose2D(0, 0, 0)
+        _, log = simulate(self.mission(start), start, steps=4000)
+        self.assertLess(max(abs(p.y) for _, p, _ in log), 0.10)
+
+    def test_geofence_is_length_plus_margin(self):
+        m = self.mission()
+        self.assertEqual(m.step(0.0, Pose2D(4.2, 0, 0), FRESH, FRESH, 0, 0).state,
+                         State.ABORTED)
+
+    # The bridge ramps yaw rate (accel_yaw 1.6 rad/s^2), so at the start of the
+    # turn-round the real robot lingers near the +/-pi seam for several ticks.
+    # That -- not instantaneous rotation -- is when odometry noise can flip the
+    # direction, so the model must include the ramp or the test proves nothing.
+    YAW_ACCEL = 1.6      # rad/s^2, go2_survey_bridge default
+    YAW_NOISE = 0.03     # rad, 1 sigma, gait-induced odometry jitter
+
+    def _turnaround_reversals(self, seed, latch=True):
+        """Direction flips while turning in place at the far end, for one
+        noise seed, with the bridge's yaw ramp modelled. Returns (flips, m)."""
+        rnd = random.Random(seed)
+        start = Pose2D(0, 0, 0)
+        m = self.mission(start)
+        if not latch:
+            m._latch_turn = lambda pose, vyaw: vyaw          # disable the fix
+        pose, t, w, signs = start, 0.0, 0.0, []
+        for _ in range(6000):
+            seen = Pose2D(pose.x, pose.y, pose.yaw + rnd.gauss(0.0, self.YAW_NOISE))
+            cmd = m.step(t, seen, FRESH, FRESH, 0, 0)
+            if cmd.state != State.RUNNING:
+                break
+            if m.index == 1 and cmd.vx == 0.0 and cmd.vyaw != 0.0:
+                signs.append(math.copysign(1.0, cmd.vyaw))
+            step = self.YAW_ACCEL * DT                       # slew-limited yaw rate
+            w += max(-step, min(step, cmd.vyaw - w))
+            yaw = pose.yaw + w * DT
+            pose = Pose2D(pose.x + cmd.vx * DT * math.cos(yaw),
+                          pose.y + cmd.vx * DT * math.sin(yaw), yaw)
+            t += DT
+        return sum(1 for a, b in zip(signs, signs[1:]) if a != b), m
+
+    def test_turnaround_commits_to_one_direction_under_noise(self):
+        for seed in range(40):
+            flips, m = self._turnaround_reversals(seed, latch=True)
+            self.assertEqual(flips, 0, f"seed {seed}: turn reversed {flips}x")
+            self.assertEqual(m.state, State.DONE, f"seed {seed}: {m.reason}")
+
+    def test_model_is_able_to_show_the_problem(self):
+        # Guards the test above: without the latch, the same model and seeds
+        # must exhibit reversals. If this ever fails, the noise/ramp model has
+        # stopped exercising the seam and the latch test is no longer evidence.
+        total = sum(self._turnaround_reversals(s, latch=False)[0] for s in range(40))
+        self.assertGreater(total, 0)
 
 
 class TestPauses(unittest.TestCase):
