@@ -292,7 +292,9 @@ class LoopNode(Node):
             return res
         self.mission.abort(self._now(), "stopped by operator")
         self._publish(0.0, 0.0)
-        res.success, res.message = True, "mission aborted, zero velocity sent"
+        res.success = True
+        res.message = ("mission aborted (dry run: nothing was being published)"
+                       if self.dry_run else "mission aborted, zero velocity sent")
         self.get_logger().warning(res.message)
         return res
 
