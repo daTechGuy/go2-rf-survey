@@ -97,9 +97,19 @@ RUN source /opt/ros/humble/setup.bash \
 # across distros. Only the two message packages are built -- not the rest of
 # unitree_ros2's workspace. Pinned for the same reason as Livox-SDK2.
 # (Same approach as dancher00/go2-nav2-wifi's Dockerfile.lidar3d.)
+#
+# unitree_api's CMakeLists requires rosidl_generator_dds_idl (it emits DDS
+# IDL alongside the ROS types); without it configure fails at
+# find_package(rosidl_generator_dds_idl). Installed in THIS layer, not the
+# main apt layer above, so adding it does not invalidate every cached layer.
 ARG UNITREE_ROS2_REF=668d1ec5a05d1c38d3306bdca7d59f2ba3581a88
-RUN git clone https://github.com/unitreerobotics/unitree_ros2.git /tmp/unitree_ros2 \
-    && git -C /tmp/unitree_ros2 checkout --quiet ${UNITREE_ROS2_REF} \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ros-humble-rosidl-generator-dds-idl \
+    && rm -rf /var/lib/apt/lists/* \
+    && git init -q /tmp/unitree_ros2 \
+    && git -C /tmp/unitree_ros2 fetch -q --depth 1 \
+         https://github.com/unitreerobotics/unitree_ros2.git ${UNITREE_ROS2_REF} \
+    && git -C /tmp/unitree_ros2 checkout -q --detach FETCH_HEAD \
     && mkdir -p /tmp/unitree_msgs_ws/src \
     && cp -r /tmp/unitree_ros2/cyclonedds_ws/src/unitree/unitree_api \
              /tmp/unitree_ros2/cyclonedds_ws/src/unitree/unitree_go \
