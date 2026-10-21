@@ -30,8 +30,19 @@ CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces>\
 <NetworkInterface name=\"${IFACE}\" priority=\"default\" multicast=\"default\"/>\
 </Interfaces></General></Domain></CycloneDDS>"
 
+# Interactive at a terminal; detached and named with DETACH=<name>, so a
+# long-running node can be started over a non-interactive SSH session and
+# then inspected with `docker exec <name> ...` / stopped with `docker stop`.
+if [ -n "${DETACH:-}" ]; then
+  MODE=(-d --name "$DETACH")
+elif [ -t 0 ] && [ -t 1 ]; then
+  MODE=(-it)
+else
+  MODE=(-i)                       # piped / scripted: no TTY to allocate
+fi
+
 ARGS=(
-  --rm -it
+  --rm "${MODE[@]}"
   # DDS discovery needs multicast on the robot's L2 segment. Bridged
   # networking silently yields zero topics -- this is not optional.
   --network host
