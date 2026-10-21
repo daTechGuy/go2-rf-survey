@@ -22,6 +22,9 @@ SUITES = [
     "tools/tests/test_fov_geometry.py",
     "go2_survey_bridge/test/test_limits.py",
     "go2_survey_bridge/test/test_sport_api.py",
+    "go2_survey_loop/test/test_geometry.py",
+    "go2_survey_loop/test/test_obstacles.py",
+    "go2_survey_loop/test/test_follower.py",
 ]
 
 # ANSI is fine on modern Windows terminals, but not when piped to a file.

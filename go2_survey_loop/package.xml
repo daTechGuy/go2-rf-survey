@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypeof="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>go2_survey_loop</name>
+  <version>0.1.0</version>
+  <description>
+    Autonomous rectangle loop for the Go2: follows corner waypoints using the
+    robot's own odometry, stops for obstacles seen by its LiDAR, and publishes
+    only /cmd_vel -- so go2_survey_bridge's clamp, slew limit, watchdog and
+    e-stop stay in force underneath. Dry-run by default.
+  </description>
+
+  <maintainer email="brian.a.dye@gmail.com">daTechGuy</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <exec_depend>python3-numpy</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

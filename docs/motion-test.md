@@ -103,8 +103,11 @@ g++ -std=c++17 -O2 step_forward.cpp -o step_forward \
 ## Run
 
 1. ≥3 m clear ahead; stay clear of leg range.
-2. **Remote:** L2 + A to stand, then double-click START to enter walking mode.
-   Leave the sticks centered.
+2. **Remote:** L2 + A to stand, then a **single** press of START to unlock into
+   walking mode (it starts "breathing" — small balancing movements). L2 + A
+   alone *locks* the joints in a rigid stand that will not walk; double-click
+   START only keeps walking mode once you are already in it. Leave the sticks
+   centered.
 3. `./step_forward eth0`
 4. It waits 2 s, creeps forward ~0.9 m over 3 s, stops, and stays standing.
 
