@@ -211,29 +211,42 @@ bash tools/go2loop.sh bridge-down          # zeroes and hands back to the remote
 
 Smallest possible real route. Clear ~1.5 m around it. You on the remote.
 
-1. Remote: L2 + A, then a **single** START (robot "breathes").
-2. Bridge running (stage 1).
-3. Container:
-   ```bash
-   PYTHONPATH=/workspace/go2_survey_loop:$PYTHONPATH python3 -m go2_survey_loop.loop_node \
-       --ros-args -p shape:=out_and_back -p length:=1.0 -p dry_run:=false \
-       > /tmp/loop.log 2>&1 &
-   sleep 3
-   ros2 service call /go2_loop/start std_srvs/srv/Trigger
-   ```
-4. Watch it: forward 1 m, turn round in place (one direction, no back-and-forth),
-   walk back, stop.
-5. Abort any time: `ros2 service call /go2_loop/stop std_srvs/srv/Trigger`,
-   or **L2 + START** on the remote.
+`tools/demo.sh` does the whole run with one command, and **enforces the
+staged rollout**: it refuses a live run without a Stage 1 turn-test PASS
+from today on the same backend, and refuses anything over 1 m without a
+completed 1 m route from today (`tools/stage_gate.py`).
 
-Then walk in front of it mid-leg: it must stop and stay stopped until
-`ros2 service call /go2_loop/resume std_srvs/srv/Trigger`.
+**First, rehearse** — same command, nothing moves (dry-run loop, no bridge),
+proves the whole chain incl. recording and the floorplan:
+```bash
+bash tools/demo.sh --length 1.0 --rehearse
+```
+
+**Then live** — remote: L2 + A, then a **single** START (robot breathes):
+```bash
+bash tools/demo.sh --length 1.0 --i-confirm-breathing
+```
+It runs preflight, resets the live view, starts recording, the bridge and
+the loop, starts the mission and prints each state change. Watch it: forward
+1 m, turn round in place (one direction, no back-and-forth), walk back, stop.
+A completed 1 m run is recorded as the Stage 2 pass.
+
+Abort any time: **Ctrl-C** in that shell (safe shutdown: stop mission → bridge
+down, zero + hand back → loop down → close recording), `bash tools/go2loop.sh
+stop` from another shell, or **L2 + START** on the remote.
+
+Then walk in front of it mid-leg: it must pause and stay paused until
+`bash tools/go2loop.sh resume` (from another shell).
 
 ## Stage 3 — the classroom route, recording the map
 
-Same as stage 2 with `length:=3.0` (10 ft), starting in the doorway facing
-down the aisle, and `ros2 bag record` running in a second container shell
-(see `bag_to_map.py`). One run gives the autonomous demo and the floorplan.
+```bash
+bash tools/demo.sh --length 3.0 --i-confirm-breathing --name classroom
+```
+3 m (10 ft), starting just inside the doorway facing down the aisle. The
+live view shows the room appear on the laptop as it walks; at the end it
+builds the floorplan and prints the `scp` line to fetch it. Add
+`--backend avoid` only after the avoid-backend gate above has passed.
 
 ## Parameters
 

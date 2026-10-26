@@ -66,6 +66,7 @@ class Probe(Node):
         self.odom = self.odom_t = None
         self.sport = self.sport_t = None
         self.cmd, self.api = 0.0, None
+        self.backend_seen = None            # "sport" / "avoid": which path drove it
         self.create_subscription(Odometry, "/utlidar/robot_odom", self._on_odom,
                                  qos_profile_sensor_data)
         self.create_subscription(SportModeState, "/sportmodestate", self._on_sport,
@@ -86,6 +87,7 @@ class Probe(Node):
         api = int(m.header.identity.api_id)
         self.api = api
         if api == MOVE:
+            self.backend_seen = "sport"
             try:
                 self.cmd = float(json.loads(m.parameter).get("z", 0.0))
             except (ValueError, TypeError):
@@ -105,6 +107,8 @@ class Probe(Node):
             yaw = float("nan")
         self.cmd = yaw
         self.api = MOVE if yaw != 0.0 else STOP_MOVE
+        if yaw != 0.0:
+            self.backend_seen = "avoid"
 
     def spin_for(self, seconds: float) -> None:
         end = time.monotonic() + seconds
@@ -222,7 +226,16 @@ def main() -> int:
         print(f"log: {out} ({len(rows)} rows)\n")
         report = analyse(rows)
         print(format_report(report))
-        return 0 if passed(report) else 1
+        ok = passed(report)
+        if ok:
+            # demo.sh will not drive live without a recent Stage 1 pass on the
+            # same drive path -- the staged rollout, enforced.
+            marker = out.parent / ".stage1_pass"
+            marker.write_text(json.dumps({
+                "epoch": time.time(), "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "backend": p.backend_seen, "log": str(out)}))
+            print(f"Stage 1 PASS recorded ({marker}, backend={p.backend_seen})")
+        return 0 if ok else 1
     finally:
         p.destroy_node()
         rclpy.shutdown()
