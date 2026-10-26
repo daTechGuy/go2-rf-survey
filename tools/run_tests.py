@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SUITES = [
     "go2_survey_wifi/test/test_scanner.py",
     "tools/tests/test_fov_geometry.py",
+    "tools/tests/test_turn_analysis.py",
     "go2_survey_bridge/test/test_limits.py",
     "go2_survey_bridge/test/test_sport_api.py",
     "go2_survey_loop/test/test_geometry.py",

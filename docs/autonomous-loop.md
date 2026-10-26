@@ -113,26 +113,56 @@ kill %1
 
 ## Stage 1 — bridge only, robot turns on the spot
 
-Proves `/cmd_vel` reaches the robot through the bridge, and that the bridge's
-**watchdog** stops it when commands stop. The only motion is a slow turn in
-place of roughly 20°, then a stop. Open floor, you on the remote.
+Proves `/cmd_vel` reaches the robot through the bridge, that the robot
+follows it **promptly and in proportion**, and that the bridge's **watchdog**
+stops it when commands stop. The only motion is a slow turn in place of
+roughly 20°, then a stop. Open floor, you on the remote.
 
-1. Remote: L2 + A, then a **single** START (robot "breathes").
-2. Container — start the bridge. ⚠ About 1 s after it starts it sends
-   **BalanceStand** (a posture command, no walking); that is expected.
+All on the robot host (`unitree@ubuntu`):
+
+1. **Remote: L2 + A, then a single START.** Watch for the body visibly
+   balancing ("breathing"). Joint-locked (L2 + A alone) is *not* enough — see
+   the first-run note below.
+2. Start the bridge. ⚠ About 1 s after it starts it sends **BalanceStand** (a
+   posture command, no walking); that is expected.
    ```bash
-   PYTHONPATH=/workspace/go2_survey_bridge:$PYTHONPATH python3 -m go2_survey_bridge.bridge_node \
-       --ros-args -p max_vx:=0.3 -p max_vyaw:=0.5 > /tmp/bridge.log 2>&1 &
-   sleep 3; tail -5 /tmp/bridge.log         # "bridge up: /cmd_vel -> /api/sport/request"
+   bash tools/go2loop.sh bridge-up
    ```
-3. Send a slow turn for 2 s, then **stop sending** — the watchdog must halt it:
+3. Run the instrumented turn — only once the robot is breathing:
    ```bash
-   timeout 2 ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist '{angular: {z: 0.2}}'
-   sleep 1; grep -i watchdog /tmp/bridge.log | tail -2
+   bash tools/go2loop.sh turn-test --i-confirm-breathing
    ```
-   Pass: it turned ~20° left, stopped within a moment of the command ending,
-   and the log shows `watchdog: no /cmd_vel for ... -- stopping`.
-   **If it keeps turning after the command ends, L2 + START and stop here.**
+   It refuses (and sends nothing) unless odometry and `/sportmodestate` are
+   live, the bridge is listening, the robot isn't already turning, and speed
+   and duration are within hard caps (0.3 rad/s, 3 s). It never sends a zero:
+   stopping is the watchdog's job, which is what's under test.
+4. `bash tools/go2loop.sh bridge-down`
+
+It logs ~50 Hz to `~/surveys/turn_<time>.csv` — what the bridge sent, heading
+from **both** the LiDAR odometry and the IMU, IMU yaw rate, sport mode/gait/
+error code — and prints a report. **PASS** needs all of: response within
+0.5 s, at least half the commanded rotation while commanded, no swing over 5°
+after the stop, both heading sources within 8°, and still in the last 2 s.
+**If it keeps turning after the command ends, L2 + START.**
+
+The two heading sources are what make a failure diagnosable: if they agree,
+the motion was real (lag, wrong mode); if they disagree, the LiDAR odometry
+jumped and the robot didn't move.
+
+### First attempt (2026-10-21) — FAIL, cause not yet known
+
+Commanded +0.2 rad/s for 2 s (≈23°). Measured on LiDAR odometry: **3°** while
+commanded, then a swing to **+26° about 1.5 s after the stop**, back to +8°,
+settled by ~3 s. The bridge's watchdog fired on time (0.31 s) and sent
+StopMove — the software side worked; the robot's motion did not match.
+
+Known procedural miss: the robot had just been put in a **joint-locked stand
+(L2 + A, no START)** for a clearance reading, and the test ran without
+re-confirming walking mode. `/sportmodestate` read mode 0, gait 0,
+error_code 100 (one unofficial source maps 100 to 灵动 / "agile" mode). Only
+odometry heading was logged, so a real late rotation and an odometry jump
+could not be told apart — which is why the test is now instrumented as
+above. Do not proceed to Stage 2 until Stage 1 passes.
 
 ## Stage 2 — live, 1 m out-and-back, open floor
 

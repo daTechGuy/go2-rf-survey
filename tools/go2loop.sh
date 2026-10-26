@@ -12,6 +12,14 @@
 #   bash tools/go2loop.sh log       last lines of the node's log
 #   bash tools/go2loop.sh down      stop the node and remove its container
 #
+#   bash tools/go2loop.sh bridge-up    start go2_survey_bridge (sends BalanceStand
+#                                      ~1 s after start: a posture change)
+#   bash tools/go2loop.sh turn-test --i-confirm-breathing
+#                                      Stage 1: 0.2 rad/s turn for 2 s, then the
+#                                      watchdog must stop it (MOVES THE ROBOT)
+#   bash tools/go2loop.sh bridge-log   last lines of the bridge's log
+#   bash tools/go2loop.sh bridge-down  stop the bridge (sends StopMove on exit)
+#
 # Why a script: the node runs in a detached container, and every query needs
 # the ROS environment sourced inside it. Two traps it avoids:
 #  * PYTHONPATH must be PREPENDED -- replacing it hides ROS (no rclpy).
@@ -22,10 +30,14 @@
 set -uo pipefail
 
 NAME=go2loop
+BRIDGE=go2bridge
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="${HOME}/surveys/${NAME}.log"
+BLOG="${HOME}/surveys/${BRIDGE}.log"
+SRC='source /opt/ros/humble/setup.bash; source /opt/unitree_msgs/setup.bash'
 
 running() { docker ps --filter "name=^${NAME}$" --format '{{.Names}}' | grep -q .; }
+bridge_running() { docker ps --filter "name=^${BRIDGE}$" --format '{{.Names}}' | grep -q .; }
 ros()     { docker exec "$NAME" bash -c "source /opt/ros/humble/setup.bash; $1"; }
 need_up() { running || { echo "node not running -- start it with: bash tools/go2loop.sh up ..." >&2; exit 1; }; }
 
@@ -60,8 +72,30 @@ case "${1:-}" in
   down)
     if running; then docker stop "$NAME" >/dev/null && echo "node stopped"; else echo "node not running"; fi
     ;;
+  bridge-up)
+    shift
+    docker rm -f "$BRIDGE" >/dev/null 2>&1
+    mkdir -p "${HOME}/surveys"
+    : > "$BLOG"
+    DETACH="$BRIDGE" IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
+      "PYTHONPATH=/workspace/go2_survey_bridge:\$PYTHONPATH python3 -u -m go2_survey_bridge.bridge_node --ros-args -p max_vx:=0.3 -p max_vyaw:=0.5 $* > /surveys/${BRIDGE}.log 2>&1" \
+      >/dev/null || { echo "failed to start bridge container" >&2; exit 1; }
+    sleep 4
+    if bridge_running; then grep -v '^WARN' "$BLOG" | tail -n 6; else echo "bridge exited:"; tail -n 20 "$BLOG"; exit 1; fi
+    ;;
+  turn-test)
+    shift
+    bridge_running || { echo "bridge not running -- start it with: bash tools/go2loop.sh bridge-up" >&2; exit 1; }
+    docker exec "$BRIDGE" bash -c "$SRC; python3 /workspace/tools/turn_test.py $*"
+    ;;
+  bridge-log)
+    grep -v '^WARN' "$BLOG" | tail -n "${2:-20}"
+    ;;
+  bridge-down)
+    if bridge_running; then docker stop "$BRIDGE" >/dev/null && echo "bridge stopped (StopMove sent on exit)"; else echo "bridge not running"; fi
+    ;;
   *)
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac
