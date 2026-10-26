@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Fake docker: a "container" is a file in $FAKE/containers (holding a pid if
+# it runs a process). Every start/stop is logged to $FAKE/events.log so the
+# scenarios can check the shutdown order.
+C="$FAKE/containers"
+mkdir -p "$C"
+ev() { echo "$(date +%s.%N) $*" >> "$FAKE/events.log"; }
+stopc() {
+  [ -f "$C/$1" ] || return 0
+  pid=$(cat "$C/$1")
+  [ -n "$pid" ] && kill "$pid" 2>/dev/null
+  rm -f "$C/$1"
+  ev "$2 $1"
+}
+
+case "$1" in
+  ps)
+    name=$(printf '%s\n' "$@" | sed -n 's/^name=^\(.*\)\$$/\1/p')
+    if [ -n "$name" ]; then [ -f "$C/$name" ] && echo "$name"; else ls "$C"; fi
+    ;;
+  rm)    stopc "${@: -1}" rm ;;
+  stop)  [ -f "$C/${@: -1}" ] && { stopc "${@: -1}" stop; echo "${@: -1}"; } ;;
+  kill)  stopc "${@: -1}" "kill$( [ "$2" = -s ] && echo "-$3")" ;;
+  wait)  while [ -f "$C/$2" ]; do /usr/bin/sleep 0.1; done; echo 0 ;;
+  exec)
+    name="$2"
+    [ -f "$C/$name" ] || { echo "Error: No such container: $name" >&2; exit 1; }
+    cmd="${@: -1}"
+    case "$cmd" in
+      *"topic echo /go2_loop/status"*) python "$FAKE_LIB_W/fakeloop.py" status ;;
+      *"service call /go2_loop/"*)
+        svc=$(echo "$cmd" | sed -n 's#.*service call /go2_loop/\([a-z]*\).*#\1#p')
+        ev "service $svc"
+        python "$FAKE_LIB_W/fakeloop.py" service "$svc" | grep -o 'success=.*' ;;
+      *"service call /go2_live_map/reset"*) echo "success=True, message='map cleared'" ;;
+      *"ros2 daemon"*) ;;
+      *) echo "exec $name: $cmd" >> "$FAKE/unhandled" ;;
+    esac
+    ;;
+  *) echo "docker $*" >> "$FAKE/unhandled" ;;
+esac

@@ -145,7 +145,9 @@ cleanup() {
     echo "   recording closed: ~/surveys/$BAG"
   fi
 }
-trap 'cleanup; exit 130' INT TERM
+# every way out leaves a "demo finished:" line, which go2loop.sh results reads
+bail() { echo "$1"; cleanup; echo "== $(ts) demo finished: ${2:-failed ($1)}"; exit 1; }
+trap 'cleanup; echo "== $(ts) demo finished: stopped early (Ctrl-C / demo-stop)"; exit 130' INT TERM
 
 if [ "$VIZ" = 1 ]; then
   echo "== live view"
@@ -157,13 +159,13 @@ echo "== recording -> ~/surveys/$BAG"
 docker rm -f go2rec >/dev/null 2>&1
 DETACH=go2rec IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
   "exec ros2 bag record -o /surveys/$BAG /utlidar/cloud_deskewed /utlidar/robot_odom > /surveys/$BAG.reclog 2>&1" \
-  >/dev/null || { echo "could not start recording"; cleanup; exit 1; }
+  >/dev/null || bail "could not start recording"
 sleep 3
 
 if [ "$REHEARSE" = 0 ]; then
   echo "== bridge (backend $BACKEND)"
-  $G bridge-up -p "backend:=$BACKEND" || { cleanup; exit 1; }
-  STARTED_BRIDGE=1
+  STARTED_BRIDGE=1                    # before bridge-up: a half-started bridge is still taken down
+  $G bridge-up -p "backend:=$BACKEND" || bail "bridge did not start"
   DRY=false
 else
   DRY=true
@@ -172,7 +174,7 @@ fi
 echo "== loop"
 LOOP_ARGS="-p shape:=$SHAPE -p length:=$LENGTH -p dry_run:=$DRY"
 [ -n "$WIDTH" ] && LOOP_ARGS="$LOOP_ARGS -p width:=$WIDTH"
-$G up $LOOP_ARGS || { cleanup; exit 1; }
+$G up $LOOP_ARGS || bail "loop node did not start"
 
 # what the remote trigger did (e.g. a start the loop refused: path blocked)
 seen=0
@@ -185,7 +187,8 @@ show_remote() {
 
 if [ "$REMOTE" = 1 ]; then
   echo "== remote trigger"
-  $G remote-up || { cleanup; exit 1; }
+  $G remote-up || bail "remote trigger did not start"
+  seen=$(wc -l < "$HOME/surveys/go2remote.log")   # remote-up already showed these
   echo "== $(ts) WAITING FOR THE REMOTE: hold SELECT+UP 1.5 s to start (up to ${WAIT} s)"
   echo "   abort any time: SELECT+DOWN, L2+START, or push a stick"
   wait_end=$(( $(date +%s) + WAIT ))
@@ -194,7 +197,7 @@ if [ "$REMOTE" = 1 ]; then
     s=$($G status); state="${s%% |*}"
     case "$state" in running|paused|done|aborted) echo "   $(ts) $s"; break ;; esac
     if [ "$(date +%s)" -ge "$wait_end" ]; then
-      echo "   no start from the remote in ${WAIT} s"; cleanup; echo "== $(ts) demo finished: not started"; exit 1
+      bail "   no start from the remote in ${WAIT} s" "not started"
     fi
     sleep 1
   done
@@ -202,8 +205,7 @@ else
   echo "== $(ts) start"
   out=$($G start)
   echo "   $out"
-  case "$out" in *success=True*) ;; *) echo "start refused -- see above"; cleanup
-    echo "== $(ts) demo finished: not started"; exit 1 ;; esac
+  case "$out" in *success=True*) ;; *) bail "start refused -- see above" "not started" ;; esac
 fi
 
 # ---- watch ------------------------------------------------------------------

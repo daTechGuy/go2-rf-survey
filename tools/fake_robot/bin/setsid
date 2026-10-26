@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Git Bash has no setsid. The robot (util-linux) does; here only the
+# "run it detached" part is tested, not the new session itself.
+exec "$@"

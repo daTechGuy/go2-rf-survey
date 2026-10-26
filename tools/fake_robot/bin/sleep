@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# The scripts wait seconds for containers to start; the fakes start at once.
+# Keep 1 s polls real (they pace the remote's hold timing), shrink the rest.
+case "$1" in
+  0*|1|1.*) exec /usr/bin/sleep "$1" ;;
+  *) exec /usr/bin/sleep 0.3 ;;
+esac

@@ -60,6 +60,10 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
   Python. Keep it that way — if new logic can be made testable, make it.
 - **Tests before hardware.** `python tools/run_tests.py` must stay green and
   must not acquire dependencies.
+- **Shell flows get the fake robot.** After changing `demo.sh`, `go2loop.sh`
+  or `remote_trigger.py`, run `bash tools/fake_robot/run.sh` (Git Bash on the
+  laptop, ~5 min, 19 scenarios): real scripts against fake docker/ROS/remote.
+  It found a pipefail bug that made a healthy `bridge-up` report failure.
 - **Placeholders are marked loudly.** `config/mount.yaml` and
   `config/MID360_config.json` contain values that are guesses. Never quietly
   treat them as measured.

@@ -65,6 +65,9 @@ SRC='source /opt/ros/humble/setup.bash; source /opt/unitree_msgs/setup.bash'
 running() { docker ps --filter "name=^${NAME}$" --format '{{.Names}}' | grep -q .; }
 bridge_running() { docker ps --filter "name=^${BRIDGE}$" --format '{{.Names}}' | grep -q .; }
 ros()     { docker exec "$NAME" bash -c "source /opt/ros/humble/setup.bash; $1"; }
+# Show a log without WARN lines. Never fails: with pipefail, grep on a log that
+# is still empty returns 1 -- which made a healthy bridge-up/up report failure.
+show_log() { grep -v '^WARN' "$1" | tail -n "$2"; return 0; }
 need_up() { running || { echo "node not running -- start it with: bash tools/go2loop.sh up ..." >&2; exit 1; }; }
 
 case "${1:-}" in
@@ -77,7 +80,7 @@ case "${1:-}" in
       "PYTHONPATH=/workspace/go2_survey_loop:\$PYTHONPATH python3 -u -m go2_survey_loop.loop_node --ros-args $* > /surveys/${NAME}.log 2>&1" \
       >/dev/null || { echo "failed to start container" >&2; exit 1; }
     sleep 6
-    if running; then grep -v '^WARN' "$LOG" | tail -n 5; else echo "node exited:"; tail -n 20 "$LOG"; exit 1; fi
+    if running; then show_log "$LOG" 5; else echo "node exited:"; tail -n 20 "$LOG"; exit 1; fi
     ;;
   status)
     need_up
@@ -93,7 +96,7 @@ case "${1:-}" in
     ros "timeout 20 ros2 service call /go2_loop/$1 std_srvs/srv/Trigger 2>/dev/null | grep -o 'success=.*' || echo 'no reply from /go2_loop/$1'"
     ;;
   log)
-    grep -v '^WARN' "$LOG" | tail -n "${2:-20}"
+    show_log "$LOG" "${2:-20}"
     ;;
   down)
     if running; then docker stop "$NAME" >/dev/null && echo "node stopped"; else echo "node not running"; fi
@@ -123,7 +126,7 @@ case "${1:-}" in
       >/dev/null || { echo "failed to start viz container" >&2; exit 1; }
     sleep 6
     if docker ps --filter "name=^go2viz$" --format '{{.Names}}' | grep -q .; then
-      grep -v '^WARN' "${HOME}/surveys/go2viz.log" | tail -n 3
+      show_log "${HOME}/surveys/go2viz.log" 3
       if grep -qi "error" "${HOME}/surveys/go2viz_bridge.log"; then
         echo "foxglove_bridge reported:"; tail -n 5 "${HOME}/surveys/go2viz_bridge.log"
       fi
@@ -149,7 +152,7 @@ case "${1:-}" in
       "PYTHONPATH=/workspace/go2_survey_bridge:\$PYTHONPATH python3 -u -m go2_survey_bridge.bridge_node --ros-args -p max_vx:=0.3 -p max_vyaw:=0.5 $* > /surveys/${BRIDGE}.log 2>&1" \
       >/dev/null || { echo "failed to start bridge container" >&2; exit 1; }
     sleep 4
-    if bridge_running; then grep -v '^WARN' "$BLOG" | tail -n 6; else echo "bridge exited:"; tail -n 20 "$BLOG"; exit 1; fi
+    if bridge_running; then show_log "$BLOG" 6; else echo "bridge exited:"; tail -n 20 "$BLOG"; exit 1; fi
     ;;
   turn-test)
     shift
@@ -157,7 +160,7 @@ case "${1:-}" in
     docker exec "$BRIDGE" bash -c "$SRC; python3 /workspace/tools/turn_test.py $*"
     ;;
   bridge-log)
-    grep -v '^WARN' "$BLOG" | tail -n "${2:-20}"
+    show_log "$BLOG" "${2:-20}"
     ;;
   bridge-down)
     if bridge_running; then docker stop "$BRIDGE" >/dev/null && echo "bridge stopped (StopMove sent on exit)"; else echo "bridge not running"; fi
@@ -243,7 +246,12 @@ case "${1:-}" in
       [ -d "$d" ] || continue
       b=$(basename "$d")
       outcome=$(grep -o 'demo finished: .*' "$d.demolog" 2>/dev/null | tail -1)
-      echo "$b   ${outcome:-(no demo log)}   $(du -sh "$d" | cut -f1)"
+      if [ -z "$outcome" ]; then
+        if [ ! -f "$d.demolog" ]; then outcome="(recording only, no demo log)"
+        elif kill -0 "$(cat "${HOME}/surveys/.demo.pid" 2>/dev/null)" 2>/dev/null; then outcome="(still running)"
+        else outcome="(ended without finishing -- see its log)"; fi
+      fi
+      echo "$b   $outcome   $(du -sh "$d" | cut -f1)"
       [ -f "$d.demolog" ] && echo "    log:      scp go2:surveys/$b.demolog ."
       [ -f "${d}_map-topdown.png" ] && echo "    floorplan: scp go2:surveys/${b}_map-topdown.png ."
       echo "    whole run: scp -r go2:surveys/$b* ."
