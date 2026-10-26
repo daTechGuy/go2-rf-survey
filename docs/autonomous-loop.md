@@ -123,12 +123,19 @@ All on the robot host (`unitree@ubuntu`):
 1. **Remote: L2 + A, then a single START.** Watch for the body visibly
    balancing ("breathing"). Joint-locked (L2 + A alone) is *not* enough — see
    the first-run note below.
-2. Start the bridge. ⚠ About 1 s after it starts it sends **BalanceStand** (a
+2. Check which motion mode owns the legs (read-only):
+   ```bash
+   bash tools/go2loop.sh mode          # want: name='normal'
+   ```
+   Sport-mode `Move` — what the bridge sends — is documented to be honoured
+   only in mode `normal`. The turn test refuses in any other mode unless you
+   pass `--allow-mode <name>` (or `any`) deliberately.
+3. Start the bridge. ⚠ About 1 s after it starts it sends **BalanceStand** (a
    posture command, no walking); that is expected.
    ```bash
    bash tools/go2loop.sh bridge-up
    ```
-3. Run the instrumented turn — only once the robot is breathing:
+4. Run the instrumented turn — only once the robot is breathing:
    ```bash
    bash tools/go2loop.sh turn-test --i-confirm-breathing
    ```
@@ -136,7 +143,7 @@ All on the robot host (`unitree@ubuntu`):
    live, the bridge is listening, the robot isn't already turning, and speed
    and duration are within hard caps (0.3 rad/s, 3 s). It never sends a zero:
    stopping is the watchdog's job, which is what's under test.
-4. `bash tools/go2loop.sh bridge-down`
+5. `bash tools/go2loop.sh bridge-down`
 
 It logs ~50 Hz to `~/surveys/turn_<time>.csv` — what the bridge sent, heading
 from **both** the LiDAR odometry and the IMU, IMU yaw rate, sport mode/gait/

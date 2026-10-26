@@ -42,6 +42,7 @@ from nav_msgs.msg import Odometry
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from turn_analysis import MOVE, STOP_MOVE, analyse, format_report, passed  # noqa: E402
+from unitree_rpc import UnitreeRpc, check_mode  # noqa: E402
 
 try:
     from unitree_api.msg import Request
@@ -107,8 +108,15 @@ class Probe(Node):
         }
 
 
-def preflight(p: Probe, args) -> list:
+def preflight(p: Probe, args, mode) -> list:
     problems = []
+    if args.allow_mode != "any":
+        if mode is None:
+            problems.append("motion_switcher did not answer CheckMode "
+                            "(override with --allow-mode any)")
+        elif mode[0] != args.allow_mode:
+            problems.append(f"motion mode is '{mode[0]}', not '{args.allow_mode}': sport "
+                            "Move is documented for 'normal' (override with --allow-mode)")
     if not args.i_confirm_breathing:
         problems.append("robot walking mode not confirmed: remote L2+A then a SINGLE "
                         "START, body visibly breathing; then pass --i-confirm-breathing")
@@ -136,6 +144,8 @@ def main() -> int:
     ap.add_argument("--settle", type=float, default=5.0, help="logging after the stop")
     ap.add_argument("--rate", type=float, default=20.0, help="command publish rate, Hz")
     ap.add_argument("--i-confirm-breathing", action="store_true")
+    ap.add_argument("--allow-mode", default="normal",
+                    help="required motion_switcher mode name, or 'any' to skip the check")
     ap.add_argument("--csv", type=Path, default=None)
     args = ap.parse_args()
 
@@ -143,7 +153,9 @@ def main() -> int:
     p = Probe()
     try:
         p.spin_for(2.0)                                  # discovery + first samples
-        problems = preflight(p, args)
+        mode = check_mode(UnitreeRpc(p))
+        print(f"motion mode       : {'no reply' if mode is None else f'{mode[0]!r} (form {mode[1]!r})'}")
+        problems = preflight(p, args, mode)
         s = p.sport
         if s is not None:
             print(f"sport state before: mode={s.mode} gait_type={s.gait_type} "
