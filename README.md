@@ -4,30 +4,32 @@ Autonomous WiFi site surveying with a Unitree Go2 EDU. The robot maps a floor wi
 LiDAR, then walks it again recording signal strength at every waypoint, producing
 per-SSID heatmaps registered to the SLAM floorplan.
 
-**Status:** phase 0, pending hardware access. The measurement and
-post-processing halves are written and tested — see
-[What works today](#what-works-today).
+**Status:** hardware bring-up under way. The robot is reachable, the Humble
+container builds and runs on it, and room maps are made from the Go2's
+**built-in** LiDAR. Current focus is an **autonomous classroom mapping demo**:
+the robot walks a short route by itself, stops for obstacles, and leaves a
+floorplan. The WiFi survey is written and tested, and comes after that.
 
 > ### ▶ Resume here
 >
-> **Phase 0 done** (2026-10-20, `docs/survey-2026-10-20.txt`): SSH over `eth0`
-> confirmed, Docker 24.0.5 with the NVIDIA runtime registered, Foxy stock →
-> Humble container ([D1](docs/plan.md)), kernel 5.10 / JetPack 5.1.1, 429 GB
-> free.
+> **Next session: follow [docs/field-guide/01-small-room-test.md](docs/field-guide/01-small-room-test.md)**,
+> step by step from unpacking: power, connect, checks, the remote-button
+> check, the Stage 1 turn test, then an untethered 1 m walk.
 >
-> **Next action:** connect the Mid-360, then build and launch the container:
+> Where it stands (2026-10-26):
+> - ✅ SSH (key-based, `ssh go2`), the container image, and a map from a stationary recording
+> - ✅ Autonomous loop dry run on the robot; first motion via the vendor SDK ([motion-test](docs/motion-test.md))
+> - ❌ **Stage 1 turn test failed once (2026-10-21), cause unknown.** It is now
+>   instrumented and refuses unless the robot is in walking mode, the leading suspect.
+> - 🆕 Not yet run on the robot: live view, one-command demo, remote start /
+>   untethered runs. All exercised off-robot by the [fake robot](#fake-robot).
+> - ⬜ Mid-360 → `livox_ros_driver2` initialises but receives no data (unresolved)
 >
-> ```bash
-> ssh unitree@192.168.123.18
-> git clone https://github.com/daTechGuy/go2-rf-survey.git && cd go2-rf-survey
-> docker build -t go2-survey:humble docker/ && IFACE=eth0 bash docker/run.sh
-> ```
+> Session history: [bring-up log](docs/bringup-log-2026-10-20.md),
+> [autonomous-loop.md](docs/autonomous-loop.md#stage-1--bridge-only-robot-turns-on-the-spot).
 >
-> The DDS interface is `eth0`; the Mid-360's real IP is the one placeholder left
-> until the sensor is plugged. Full steps: **[docs/RUNBOOK.md](docs/RUNBOOK.md)**.
->
-> **No robot to hand?** Part 0 of the runbook works on any machine:
-> `python tools/run_tests.py`, then render a heatmap from synthetic data.
+> **No robot to hand?** `python tools/run_tests.py` (stdlib only), and
+> `bash tools/fake_robot/run.sh` (Git Bash) for the on-robot scripts.
 
 ---
 
@@ -36,8 +38,9 @@ post-processing halves are written and tested — see
 | Component | Part | Notes |
 |---|---|---|
 | Platform | Unitree Go2 EDU | Jetson Orin, `192.168.123.18` |
-| LiDAR | Livox Mid-360 | 360° × 59° (−7° to +52°), 200k pts/s, built-in IMU |
-| Depth | Intel RealSense D435i | near-field obstacles inside the LiDAR blind zone |
+| LiDAR (in use) | Go2 built-in head LiDAR | `/utlidar/cloud_deskewed` + `/utlidar/robot_odom`, already in the `odom` frame |
+| LiDAR (add-on) | Livox Mid-360 | 360° × 59° (−7° to +52°), 200k pts/s, built-in IMU. Mounted at `192.168.123.20`; driver gets no data yet |
+| Depth | Intel RealSense D435i | near-field obstacles inside the LiDAR blind zone. Enumerates on USB; not brought up |
 | WiFi scan | **MT7612U** USB adapter | Netgear A6210 or Alfa AWUS036ACM — see below |
 
 ### The WiFi adapter is not an obvious choice
@@ -80,6 +83,18 @@ The SLAM pose is consumed twice — Nav2 needs it to drive, the survey node need
 to geotag a scan. There is no independent localisation path for the WiFi data, so
 odometry drift shows up directly as a smeared heatmap.
 
+**What runs today** (until the Mid-360 and Nav2 are up), all on the robot in
+the Humble container:
+
+```
+built-in LiDAR ──► go2_survey_loop ──► /cmd_vel ──► go2_survey_bridge ──► sport Move ──► robot
+ (/utlidar/*)       route + obstacle stop           clamp, slew, watchdog
+       │
+       ├──► ros2 bag ──► tools/bag_to_map.py ──► floorplan PNG + occupancy grid
+       └──► tools/live_map.py + foxglove_bridge ──► Foxglove on the laptop
+handheld remote ──► /wirelesscontroller ──► tools/remote_trigger.py ──► start / resume / abort
+```
+
 ## Output schema
 
 One row per access point per sample position:
@@ -104,14 +119,38 @@ Everything that doesn't need the robot is written and verified ahead of
 hardware access.
 
 ```bash
-bash tools/run_tests.sh
-# 85 tests passed across 4 suites
+python tools/run_tests.py        # or: bash tools/run_tests.sh
+# 242 tests passed across 13 suites
 ```
 
 Plain stdlib `unittest` — no ROS, no radio, no robot, no numpy. That's
 deliberate: the parts most likely to be quietly wrong (`iw` output parsing,
-velocity limiting, the watchdog) are pure functions precisely so they can be
-pinned before the hardware exists. `colcon test` picks them up too.
+velocity limiting, the watchdog, obstacle classification, route following,
+the stage gate, remote-button decoding) are pure functions precisely so they
+can be pinned before the hardware exists. `colcon test` picks them up too.
+
+### Fake robot
+
+```bash
+bash tools/fake_robot/run.sh     # Git Bash or Linux; ~5 min
+# fake robot: all 95 checks passed
+```
+
+Runs the real on-robot scripts (`demo.sh`, `go2loop.sh`, `remote_trigger.py`,
+`stage_gate.py`) against fake docker, ROS and remote, through 19 scenarios:
+remote start and abort, unplugged runs, pauses, refusals, failures, and the
+shutdown order. Run it after changing any of them.
+
+### `go2_survey_loop` + `tools/demo.sh` — the autonomous demo
+
+`go2_survey_loop` walks a route (`out_and_back` or `rectangle`) from the
+robot's own LiDAR odometry and **stops** for anything within 0.5 m ahead or
+0.55 m around. It's a stop system, not a planner. Dry-run by default; pauses
+latch; there's a geofence and a time limit. `tools/demo.sh` runs a whole demo
+with one command and enforces the staged rollout (turn test → 1 m → longer).
+With `--remote-start --detach` it is started from the handheld remote with
+no cable attached. Details: [autonomous-loop.md](docs/autonomous-loop.md);
+hands-on steps: [field guide](docs/field-guide/README.md).
 
 ### `go2_survey_wifi` — the ROS 2 node
 
@@ -252,22 +291,25 @@ where gravity points.
 Ordered by dependency. The survey capability lands at phase 5, before autonomy, so
 there is a working deliverable even if Nav2 tuning stalls.
 
-- [~] **00 · Access and inventory** — SSH in, change stock password, run `tools/go2_survey.sh`
+- [x] **00 · Access and inventory** — SSH in, change stock password, run `tools/go2_survey.sh`
       *Done 2026-10-20 (`docs/survey-2026-10-20.txt`): eth0, Docker + NVIDIA
-      runtime, kernel 5.10 / JetPack 5.1.1. Password left at default (demo);
-      `ros2 topic echo /sportmodestate` stream not yet verified.*
-- [ ] **01 · Choose the ROS runtime** — Humble in a `--network host` container over native Foxy
-      *Exit: unitree_ros2 topics visible from inside the container*
-- [ ] **02 · Mid-360 bring-up** — Livox-SDK2 + `livox_ros_driver2`, resolve the subnet collision
-      *Exit: `/livox/lidar` renders a recognisable room in RViz*
+      runtime, kernel 5.10 / JetPack 5.1.1. Password deliberately left at
+      default (demo unit); key-based `ssh go2` since 2026-10-21. `/sportmodestate` verified.*
+- [x] **01 · Choose the ROS runtime** — Humble in a `--network host` container over native Foxy
+      *Done: Unitree topics visible in the container; `unitree_api` / `unitree_go` baked into the image*
+- [~] **02 · Mid-360 bring-up** — Livox-SDK2 + `livox_ros_driver2`, resolve the subnet collision
+      *Exit: `/livox/lidar` renders a recognisable room in RViz.
+      Mid-360 at `192.168.123.20` (no subnet collision); the driver gets no data yet.
+      Meanwhile the built-in LiDAR does the mapping.*
 - [ ] **03 · Mount geometry and TF tree** — pitch ~22° down, write the URDF
       *Exit: floor reads flat and level in `base_link`; walls vertical*
 - [ ] **04 · LiDAR-inertial SLAM** — FAST-LIO2 with Mid-360 params
       *Exit: walk a loop and return, drift under ~1% of path length*
 - [ ] **05 · WiFi survey node** ← **deliverable**
       *Exit: per-SSID heatmap of one floor, registered to the SLAM map*
-- [ ] **06 · Velocity bridge** — `/cmd_vel` → `Move(vx, vy, vyaw)`, with a watchdog
-      *Exit: robot tracks `/cmd_vel`; halts within 300 ms of silence*
+- [~] **06 · Velocity bridge** — `/cmd_vel` → `Move(vx, vy, vyaw)`, with a watchdog
+      *Exit: robot tracks `/cmd_vel`; halts within 300 ms of silence.
+      Watchdog fired on time on the robot; tracking failed the first turn test (2026-10-21)*
 - [ ] **07 · Depth camera and costmaps** — decimate hard, feed the local costmap
       *Exit: a box on the floor at 0.5 m appears in the local costmap*
 - [ ] **08 · Nav2 and the waypoint route** — the long pole
@@ -277,8 +319,12 @@ there is a working deliverable even if Nav2 tuning stalls.
 
 | | |
 |---|---|
-| **[field-guide/](docs/field-guide/README.md)** | **Hands-on session guides: unpack → power up → small-room test → classroom demo → pack up.** |
-| **[RUNBOOK.md](docs/RUNBOOK.md)** | **What to type, in order, to get a heatmap.** Start here. |
+| **[field-guide/](docs/field-guide/README.md)** | **Hands-on session guides: unpack → power up → small-room test → classroom demo → pack up.** Start here for a robot session. |
+| [autonomous-loop.md](docs/autonomous-loop.md) | The autonomous route: safety layers, staged rollout (Stage 0–3), untethered runs |
+| [live-view.md](docs/live-view.md) | Foxglove on the laptop: live map, trail, loop status |
+| [motion-test.md](docs/motion-test.md) | First motion via the vendor SDK (bounded 3-step walk) |
+| [bringup-log-2026-10-20.md](docs/bringup-log-2026-10-20.md) | What was found and fixed on the robot; laptop internet sharing |
+| [RUNBOOK.md](docs/RUNBOOK.md) | What to type, in order, to get a WiFi heatmap (the end goal) |
 | [HARDWARE.md](docs/HARDWARE.md) | What to buy and what to avoid — especially the WiFi adapter |
 | [BUILD_PLAN.md](docs/BUILD_PLAN.md) | Nine phases with exit criteria and the risk register |
 | [plan.md](docs/plan.md) | Derivations and decision records (D1–D4) |
@@ -318,7 +364,7 @@ New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.123.222 -PrefixLe
 
 ```bash
 ping 192.168.123.18
-ssh unitree@192.168.123.18        # stock password: 123 — change it immediately
+ssh unitree@192.168.123.18        # stock password: 123 — change it on any robot that isn't a closed demo unit
 ```
 
 | Address | What | Access |
@@ -327,8 +373,11 @@ ssh unitree@192.168.123.18        # stock password: 123 — change it immediatel
 | `192.168.123.161` | MCU / motion controller | no SSH |
 | `192.168.123.222` | your laptop | — |
 
-If ping fails it's almost always Windows routing over WiFi instead of the wired
-link. Turn WiFi off for the first connection.
+With the static address, `192.168.123.0/24` goes out the wired adapter, so
+WiFi can stay on (and should, to share the laptop's internet with the robot;
+see the [bring-up log](docs/bringup-log-2026-10-20.md)). If ping still fails,
+check the adapter's name with `Get-NetAdapter`; it changes with the USB
+adapter used.
 
 Then run the inventory script on the robot:
 
@@ -364,7 +413,14 @@ go2_survey_bridge/       ✅ /cmd_vel → sport mode         (phase 6)
     limits.py              clamp + slew + watchdog — pure, 31 tests
     sport_api.py           API ids + request JSON — pure, 15 tests
     bridge_node.py         rclpy node, services, e-stop
+    motion_backend.py      sport Move or obstacle-avoid Move — pure, tested
   launch/bridge.launch.py
+go2_survey_loop/         ✅ autonomous route + obstacle stop (dry-run default)
+  go2_survey_loop/
+    geometry.py            routes, poses — pure, tested
+    obstacles.py           floor + obstacle classification — pure, tested
+    follower.py            mission state machine, safety stops — pure, tested
+    loop_node.py           rclpy node: ~/start ~/stop ~/resume, ~/status
 go2_survey_description/  ✅ TF frames, 22° LiDAR mount    (phase 3)
   urdf/sensors.urdf.xacro  Mid-360 + D435i macro
   urdf/go2_survey.urdf.xacro
@@ -376,10 +432,22 @@ tools/                   ✅ post-processing, runs off-robot
   make_synthetic_survey.py fixture generator with ground truth
   fov_geometry.py          mount-angle maths — pure, 21 tests
   go2_survey.sh            phase-0 onboard inventory
-  run_tests.sh             all suites, no dependencies
+  run_tests.py / .sh       all suites, no dependencies
+  -- on the robot --
+  go2loop.sh               one-word control: up/start/stop/status, bridge, viz,
+                           remote, demo-log/demo-stop/results, record-start/stop
+  demo.sh                  one-command demo, staged rollout enforced
+  preflight.sh             start-of-session check (+ sensor_check, readiness)
+  stage_gate.py            turn test → 1 m → longer, within 12 h
+  turn_test.py             Stage 1, instrumented (+ turn_analysis)
+  remote_trigger.py        start/abort from the handheld remote (+ remote_keys)
+  bag_to_map.py            recording → floorplan PNG + occupancy grid
+  live_map.py, viz_entry.sh  live view for Foxglove
+  go2_mode.py, go2_avoid.py, unitree_rpc.py   Unitree API queries
+  fake_robot/              the scripts above vs fake docker/ROS/remote
 docker/                  ✅ Humble container for the Jetson (D1)
 config/                  🟨 mount.yaml, MID360_config.json, FAST-LIO2 params
-docs/                    BUILD_PLAN.md, plan.md, sample output
+docs/                    field-guide/, autonomous-loop, live-view, plans, sample output
 go2_survey_bringup/      ⬜ composed launch              (phase 8)
 ```
 

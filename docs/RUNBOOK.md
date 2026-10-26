@@ -2,6 +2,10 @@
 
 What to type, in order, to go from a fresh clone to a WiFi heatmap.
 
+> **For a hands-on robot session today, use the [field guide](field-guide/README.md)**
+> (small-room test, classroom demo). This runbook is the full path to the
+> WiFi heatmap; parts 1–2 are done (see the [bring-up log](bringup-log-2026-10-20.md)).
+
 This is the operational guide. For *why* each choice was made, see
 [`BUILD_PLAN.md`](BUILD_PLAN.md) and [`plan.md`](plan.md).
 
@@ -35,7 +39,7 @@ python tools/run_tests.py
 ```
 
 ```
-85 tests passed across 4 suites
+242 tests passed across 13 suites
 ```
 
 No dependencies needed — stdlib only, deliberately, so this works on a bare

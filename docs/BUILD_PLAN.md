@@ -13,17 +13,20 @@ there is a working deliverable even if Nav2 tuning stalls.
 
 | | Phase | Effort | Status |
 |---|---|---|---|
-| 00 | [Access and inventory](#phase-00--access-and-inventory) | ~2 h | ⬜ blocked on hardware |
-| 01 | [ROS runtime](#phase-01--ros-runtime) | ~half day | ⬜ |
-| 02 | [Mid-360 bring-up](#phase-02--mid-360-bring-up) | ~1 day | ⬜ |
+| 00 | [Access and inventory](#phase-00--access-and-inventory) | ~2 h | ✅ done 2026-10-20 |
+| 01 | [ROS runtime](#phase-01--ros-runtime) | ~half day | ✅ Humble container on the robot |
+| 02 | [Mid-360 bring-up](#phase-02--mid-360-bring-up) | ~1 day | 🟨 sensor at .20, driver gets no data |
 | 03 | [Mount geometry and TF](#phase-03--mount-geometry-and-tf) | ~half day | 🟨 code written |
 | 04 | [LiDAR-inertial SLAM](#phase-04--lidar-inertial-slam) | ~1 day | 🟨 config written |
 | 05 | **[WiFi survey node](#phase-05--wifi-survey-node)** | ~half day | ✅ **written + tested** |
-| 06 | [Velocity bridge](#phase-06--velocity-bridge) | ~half day | ✅ written + tested |
+| 06 | [Velocity bridge](#phase-06--velocity-bridge) | ~half day | 🟨 watchdog OK on robot; first turn test failed |
 | 07 | [Depth camera and costmaps](#phase-07--depth-camera-and-costmaps) | ~1 day | ⬜ |
 | 08 | [Nav2 and waypoint route](#phase-08--nav2-and-waypoint-route) | several days | ⬜ |
 
-**85 tests pass today** with no robot attached: `bash tools/run_tests.sh`
+**242 tests pass today** with no robot attached: `python tools/run_tests.py`.
+Interim work not in the phase list: an autonomous out-and-back route on the
+built-in LiDAR (`go2_survey_loop`), see [autonomous-loop.md](autonomous-loop.md)
+and the hands-on [field guide](field-guide/README.md).
 
 ---
 

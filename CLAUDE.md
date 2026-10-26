@@ -13,26 +13,36 @@ D435i, plus a dedicated USB WiFi adapter for scanning.
 
 ## Where things stand
 
-**No hardware access yet.** Everything buildable without the robot is built
-and tested; everything remaining needs real sensor data.
+**Hardware bring-up under way (sessions 2026-10-20, -21).** Current goal is an
+autonomous classroom *mapping* demo on the Go2's **built-in** LiDAR; the WiFi
+survey waits for it.
 
 | Phase | State |
 |---|---|
-| 00 Access and inventory | 🟨 SSH + inventory done 2026-10-20 (eth0, NVIDIA runtime present); password left at default (demo), /sportmodestate not yet verified |
-| 01 ROS runtime | 🟨 container build fixed (ROS2/SDK-driver pairing, 2026-10-20), rebuilding |
-| 02 Mid-360 bring-up | 🟨 LiDAR found at `192.168.123.20` (same subnet, no alias); config set; driver not yet launched |
+| 00 Access and inventory | ✅ 2026-10-20 (eth0, NVIDIA runtime); password left at default (demo); key-based `ssh go2` |
+| 01 ROS runtime | ✅ Humble container builds and runs on the robot, Unitree msgs baked in |
+| 02 Mid-360 bring-up | 🟨 at `192.168.123.20`; `livox_ros_driver2` initialises but receives no data (unresolved) |
 | 03 Mount and TF | 🟨 mounted nose-down; exact pitch still to measure for URDF |
-| 04 SLAM | 🟨 config written, needs the container + hardware run |
-| 05 **WiFi survey** | ✅ written + tested — the deliverable (deferred; current goal is map-only) |
-| 06 Velocity bridge | ✅ written + tested (not used yet; first motion was via vendor SDK) |
-| 07 Depth and costmaps | 🟨 RealSense D435i present on USB (`8086:0b3a`); not yet brought up |
-| 08 Nav2 | ⬜ |
+| 04 SLAM | 🟨 config written; mapping meanwhile = built-in `/utlidar/*` + `tools/bag_to_map.py` |
+| 05 **WiFi survey** | ✅ written + tested — the deliverable (deferred) |
+| 06 Velocity bridge | 🟨 watchdog fired on time on the robot; **Stage 1 turn test FAILED once (2026-10-21), cause unknown** |
+| 07 Depth and costmaps | 🟨 D435i present on USB (`8086:0b3a`); not brought up |
+| 08 Nav2 | ⬜ (later: go2_ros2_sdk) |
+| — Autonomous loop | ✅ dry run on the robot; live stages gated (`tools/stage_gate.py`) |
 
-**Next action:** finish the container build (fixes in `docker/Dockerfile`,
-2026-10-20), then start it (`IFACE=eth0 bash docker/run.sh`), launch the Livox
-driver, confirm `/livox/lidar`, and run FAST-LIO2 to map the room (teleop via
-remote, collision avoidance on). See `docs/bringup-log-2026-10-20.md` for the
-full session state and the internet-sharing + robot-local config details.
+Built since the last robot session, **not yet run on the robot**: preflight,
+live view (Foxglove; image needs a rebuild), `tools/demo.sh`, remote
+start/abort + untethered runs. All pass the fake robot.
+
+**Next action:** the user runs
+[`docs/field-guide/01-small-room-test.md`](docs/field-guide/01-small-room-test.md)
+on the robot. Ask for its record sheet. The order matters: remote-key check
+(read-only), mode check, then Stage 1 before anything walks. Robot-side
+state that resets each boot: `sudo ip route replace default via
+192.168.123.222 dev eth0` (user runs sudo).
+
+**Working with the robot:** ask before anything that can move it; the user
+runs sudo commands; diagnostics and builds are fine without asking.
 
 ## Decisions already made — don't relitigate
 
@@ -56,7 +66,7 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
 
 - **Pure functions for anything that can be wrong quietly.** `iw` parsing,
   velocity limiting, the watchdog, and the FOV maths are all ROS-free and
-  clock-free so they can be tested without hardware. 85 tests run on a bare
+  clock-free so they can be tested without hardware. 242 tests run on a bare
   Python. Keep it that way — if new logic can be made testable, make it.
 - **Tests before hardware.** `python tools/run_tests.py` must stay green and
   must not acquire dependencies.
@@ -95,18 +105,21 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
 
 ```
 go2_survey_wifi/         scan + pose join → CSV          ✅ 18 tests
-go2_survey_bridge/       /cmd_vel → sport mode           ✅ 46 tests
+go2_survey_bridge/       /cmd_vel → sport mode           ✅ tested
+go2_survey_loop/         autonomous route + obstacle stop ✅ tested
 go2_survey_description/  TF frames, 22° LiDAR mount      ✅ 21 geometry tests
-tools/                   post-processing, runs off-robot
+tools/                   post-processing + on-robot scripts (go2loop.sh, demo.sh); fake_robot/
 docker/                  Humble container for the Jetson
 config/                  mount, MID360, FAST-LIO2 params
-docs/                    RUNBOOK, HARDWARE, BUILD_PLAN, plan
+docs/                    field-guide/, autonomous-loop, live-view, RUNBOOK, HARDWARE, BUILD_PLAN, plan
 ```
 
 ## Docs
 
 | | |
 |---|---|
+| [docs/field-guide/](docs/field-guide/README.md) | hands-on session steps (user-facing) |
+| [docs/autonomous-loop.md](docs/autonomous-loop.md) | the route, safety layers, staged rollout |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | what to type, in order |
 | [docs/HARDWARE.md](docs/HARDWARE.md) | what to buy, what to avoid |
 | [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) | nine phases, exit criteria, risks R1–R8 |
