@@ -174,17 +174,23 @@ LOOP_ARGS="-p shape:=$SHAPE -p length:=$LENGTH -p dry_run:=$DRY"
 [ -n "$WIDTH" ] && LOOP_ARGS="$LOOP_ARGS -p width:=$WIDTH"
 $G up $LOOP_ARGS || { cleanup; exit 1; }
 
+# what the remote trigger did (e.g. a start the loop refused: path blocked)
+seen=0
+show_remote() {
+  [ "$REMOTE" = 1 ] || return 0
+  local n; n=$(wc -l < "$HOME/surveys/go2remote.log" 2>/dev/null || echo 0)
+  [ "$n" -gt "$seen" ] && tail -n +"$((seen + 1))" "$HOME/surveys/go2remote.log" | head -n "$((n - seen))" | sed 's/^/   /'
+  seen=$n
+}
+
 if [ "$REMOTE" = 1 ]; then
   echo "== remote trigger"
   $G remote-up || { cleanup; exit 1; }
   echo "== $(ts) WAITING FOR THE REMOTE: hold SELECT+UP 1.5 s to start (up to ${WAIT} s)"
   echo "   abort any time: SELECT+DOWN, L2+START, or push a stick"
-  wait_end=$(( $(date +%s) + WAIT )); seen=0
+  wait_end=$(( $(date +%s) + WAIT ))
   while :; do
-    # show what the trigger did (e.g. a start the loop refused: path blocked)
-    n=$(wc -l < "$HOME/surveys/go2remote.log")
-    [ "$n" -gt "$seen" ] && tail -n +"$((seen + 1))" "$HOME/surveys/go2remote.log" | sed 's/^/   /'
-    seen=$n
+    show_remote
     s=$($G status); state="${s%% |*}"
     case "$state" in running|paused|done|aborted) echo "   $(ts) $s"; break ;; esac
     if [ "$(date +%s)" -ge "$wait_end" ]; then
@@ -205,6 +211,7 @@ if [ "$REHEARSE" = 1 ]; then LIMIT=15; else LIMIT=360; fi
 deadline=$(( $(date +%s) + LIMIT ))
 prev=""; state=""; paused_hint=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
+  show_remote
   s=$($G status)
   state="${s%% |*}"
   if [ "$s" != "$prev" ]; then echo "   $(ts) $s"; prev="$s"; fi
@@ -226,6 +233,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   sleep 1
 done
 [ "$(date +%s)" -ge "$deadline" ] && echo "   $(ts) time limit reached (${LIMIT} s)"
+show_remote
 
 cleanup
 trap - INT TERM
@@ -242,4 +250,9 @@ if [ "$MAP" = 1 ]; then
     2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2|^\s+[0-9]+ scans read'
   echo "   on the laptop:  scp go2:surveys/${BAG}_map-topdown.png ."
 fi
-echo "== $(ts) demo finished: ${state:-unknown}"
+if [ "$REHEARSE" = 1 ] && [ "$state" != aborted ]; then
+  # a dry run never reaches a waypoint, so it ends on the 15 s limit, still "running"
+  echo "== $(ts) demo finished: rehearsal OK (dry run, nothing moved; loop was ${state:-unknown})"
+else
+  echo "== $(ts) demo finished: ${state:-unknown}"
+fi

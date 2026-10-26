@@ -271,7 +271,7 @@ The rate should be steady (the hold timer needs a continuous stream).
 bash tools/demo.sh --length 1.0 --rehearse --remote-start --detach
 ```
 Unplug, hold SELECT+UP 1.5 s, watch nothing happen, plug back in:
-`bash tools/go2loop.sh results` should list the run as `done`.
+`bash tools/go2loop.sh results` should list the run as `rehearsal OK`.
 
 **3. Live** (after Stages 1–2 as above, sport backend):
 ```bash

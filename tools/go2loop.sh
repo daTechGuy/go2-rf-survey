@@ -42,6 +42,9 @@
 #   bash tools/go2loop.sh demo-log     follow a detached demo (demo.sh --detach)
 #   bash tools/go2loop.sh demo-stop    end a detached demo safely
 #   bash tools/go2loop.sh results      recent runs + the scp lines to fetch them
+#   bash tools/go2loop.sh record-start [NAME]   record only (you drive on the
+#                                      remote); survives unplugging
+#   bash tools/go2loop.sh record-stop  close the recording + build the floorplan
 #
 # Why a script: the node runs in a detached container, and every query needs
 # the ROS environment sourced inside it. Two traps it avoids:
@@ -202,6 +205,37 @@ case "${1:-}" in
     for _ in $(seq 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
     f=$(ls -t "${HOME}"/surveys/*.demolog 2>/dev/null | head -1)
     [ -n "$f" ] && tail -n 8 "$f"
+    ;;
+  record-start)
+    # record only -- for a map you drive by hand on the remote; commands nothing
+    if docker ps --filter "name=^go2rec$" --format '{{.Names}}' | grep -q .; then
+      echo "already recording ($(cat "${HOME}/surveys/.rec_current" 2>/dev/null)) -- record-stop first"; exit 1
+    fi
+    bag="${2:-manual}_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "${HOME}/surveys"
+    docker rm -f go2rec >/dev/null 2>&1
+    DETACH=go2rec IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
+      "exec ros2 bag record -o /surveys/$bag /utlidar/cloud_deskewed /utlidar/robot_odom > /surveys/$bag.reclog 2>&1" \
+      >/dev/null || { echo "could not start recording" >&2; exit 1; }
+    echo "$bag" > "${HOME}/surveys/.rec_current"
+    echo "recording -> ~/surveys/$bag  (keeps going if you unplug; finish with: record-stop)"
+    ;;
+  record-stop)
+    bag=$(cat "${HOME}/surveys/.rec_current" 2>/dev/null)
+    if docker ps --filter "name=^go2rec$" --format '{{.Names}}' | grep -q .; then
+      docker kill -s INT go2rec >/dev/null 2>&1       # SIGINT: the bag closes cleanly
+      timeout 30 docker wait go2rec >/dev/null 2>&1
+      echo "recording closed: ~/surveys/$bag"
+    else
+      echo "not recording"
+    fi
+    rm -f "${HOME}/surveys/.rec_current"
+    if [ -n "$bag" ] && [ -d "${HOME}/surveys/$bag" ]; then
+      echo "building the floorplan..."
+      IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" python3 /workspace/tools/bag_to_map.py "/surveys/$bag" \
+        2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2|^\s+[0-9]+ scans read'
+      echo "on the laptop:  scp go2:surveys/${bag}_map-topdown.png ."
+    fi
     ;;
   results)
     n=0

@@ -277,6 +277,7 @@ there is a working deliverable even if Nav2 tuning stalls.
 
 | | |
 |---|---|
+| **[field-guide/](docs/field-guide/README.md)** | **Hands-on session guides: unpack → power up → small-room test → classroom demo → pack up.** |
 | **[RUNBOOK.md](docs/RUNBOOK.md)** | **What to type, in order, to get a heatmap.** Start here. |
 | [HARDWARE.md](docs/HARDWARE.md) | What to buy and what to avoid — especially the WiFi adapter |
 | [BUILD_PLAN.md](docs/BUILD_PLAN.md) | Nine phases with exit criteria and the risk register |
