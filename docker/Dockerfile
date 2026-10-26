@@ -120,6 +120,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
          --cmake-args -DBUILD_TESTING=OFF \
     && rm -rf /tmp/unitree_ros2 /tmp/unitree_msgs_ws
 
+# --- live view ----------------------------------------------------------------
+# foxglove_bridge streams ROS topics over a WebSocket (port 8765) to the
+# Foxglove app on the laptop -- Windows included, no X11/NoMachine needed.
+# See docs/live-view.md. Its own layer, so adding it keeps the cache above.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ros-humble-foxglove-bridge \
+    && rm -rf /var/lib/apt/lists/*
+
 # This repo is bind-mounted at runtime (see run.sh) rather than baked in, so
 # editing a node does not mean rebuilding the image.
 ENV GO2_SURVEY_WS=/workspace

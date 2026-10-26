@@ -22,6 +22,10 @@
 #                                      Unitree's built-in obstacle avoidance;
 #                                      hold/release = API takes/returns control
 #                                      from the remote (no motion)
+#   bash tools/go2loop.sh viz-up       live view: foxglove_bridge + live map;
+#                                      connect Foxglove to ws://192.168.123.18:8765
+#   bash tools/go2loop.sh viz-reset    clear the live map and trail
+#   bash tools/go2loop.sh viz-down     stop the live view
 #   bash tools/go2loop.sh bridge-up    start go2_survey_bridge (sends BalanceStand
 #                                      ~1 s after start: a posture change)
 #   bash tools/go2loop.sh turn-test --i-confirm-breathing
@@ -99,6 +103,31 @@ case "${1:-}" in
     IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" python3 /workspace/tools/go2_avoid.py "${2:-get}" \
       2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
     ;;
+  viz-up)
+    docker rm -f go2viz >/dev/null 2>&1
+    mkdir -p "${HOME}/surveys"
+    : > "${HOME}/surveys/go2viz.log"; : > "${HOME}/surveys/go2viz_bridge.log"
+    DETACH=go2viz IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash /workspace/tools/viz_entry.sh \
+      >/dev/null || { echo "failed to start viz container" >&2; exit 1; }
+    sleep 6
+    if docker ps --filter "name=^go2viz$" --format '{{.Names}}' | grep -q .; then
+      grep -v '^WARN' "${HOME}/surveys/go2viz.log" | tail -n 3
+      if grep -qi "error" "${HOME}/surveys/go2viz_bridge.log"; then
+        echo "foxglove_bridge reported:"; tail -n 5 "${HOME}/surveys/go2viz_bridge.log"
+      fi
+      echo "Foxglove app -> Open connection -> Foxglove WebSocket -> ws://192.168.123.18:8765"
+    else
+      echo "viz exited:"; tail -n 20 "${HOME}/surveys/go2viz.log" "${HOME}/surveys/go2viz_bridge.log"; exit 1
+    fi
+    ;;
+  viz-reset)
+    docker exec go2viz bash -c "source /opt/ros/humble/setup.bash; timeout 20 ros2 service call /go2_live_map/reset std_srvs/srv/Trigger 2>/dev/null | grep -o 'success=.*'" \
+      || echo "viz not running"
+    ;;
+  viz-down)
+    if docker ps --filter "name=^go2viz$" --format '{{.Names}}' | grep -q .; then
+      docker stop go2viz >/dev/null && echo "live view stopped"; else echo "live view not running"; fi
+    ;;
   bridge-up)
     shift
     docker rm -f "$BRIDGE" >/dev/null 2>&1
@@ -122,7 +151,7 @@ case "${1:-}" in
     if bridge_running; then docker stop "$BRIDGE" >/dev/null && echo "bridge stopped (StopMove sent on exit)"; else echo "bridge not running"; fi
     ;;
   *)
-    sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac
