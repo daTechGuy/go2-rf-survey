@@ -248,6 +248,49 @@ live view shows the room appear on the laptop as it walks; at the end it
 builds the floorplan and prints the `scp` line to fetch it. Add
 `--backend avoid` only after the avoid-backend gate above has passed.
 
+## Untethered — no cable during the run
+
+Everything that keeps the robot safe runs on the robot: the obstacle stop,
+geofence, time limit, the bridge watchdog. The handheld remote is radio, so
+L2+START works anywhere. The cable is only needed to *set up* a run and for
+the live view. So: set up plugged in, unplug, start from the remote, and fetch
+the results afterwards.
+
+**1. Check the remote's buttons (read-only, robot lying down).** The start/abort
+combos are read from `/wirelesscontroller`; the bit layout is unitree_sdk2's
+but unverified on this remote. Also watch that the robot itself does nothing
+on SELECT+UP / SELECT+DOWN — if the firmware uses either, pick other combos
+(`remote_trigger.py --start/--abort`).
+```bash
+bash tools/go2loop.sh remote-keys    # press SELECT+UP, SELECT+DOWN, L2+START; note msg/s
+```
+The rate should be steady (the hold timer needs a continuous stream).
+
+**2. Rehearse untethered, nothing moves:**
+```bash
+bash tools/demo.sh --length 1.0 --rehearse --remote-start --detach
+```
+Unplug, hold SELECT+UP 1.5 s, watch nothing happen, plug back in:
+`bash tools/go2loop.sh results` should list the run as `done`.
+
+**3. Live** (after Stages 1–2 as above, sport backend):
+```bash
+bash tools/demo.sh --length 3.0 --i-confirm-breathing --name classroom --remote-start --detach
+```
+When it prints `SAFE TO UNPLUG`, unplug, and hold SELECT+UP to start.
+- **Abort:** SELECT+DOWN, L2+START (also damps), or *any stick* pushed past
+  half way — so keep thumbs off the sticks unless you mean to take over.
+- **Paused** (something in the way): clear it, hold SELECT+UP to resume.
+- Not started within 10 min (`--wait`): it shuts itself down.
+
+**Afterwards, plugged in:**
+```bash
+bash tools/go2loop.sh results          # outcome + scp lines
+bash tools/go2loop.sh demo-log         # the run's log
+bash tools/go2loop.sh demo-stop        # end a detached demo that is still going
+```
+On the laptop: `scp go2:surveys/classroom_<stamp>_map-topdown.png .`
+
 ## Parameters
 
 Typed as their defaults (`length:=4.0`, not `length:=4`).

@@ -24,6 +24,7 @@ SUITES = [
     "tools/tests/test_readiness.py",
     "tools/tests/test_trail.py",
     "tools/tests/test_stage_gate.py",
+    "tools/tests/test_remote_keys.py",
     "go2_survey_bridge/test/test_limits.py",
     "go2_survey_bridge/test/test_sport_api.py",
     "go2_survey_bridge/test/test_motion_backend.py",

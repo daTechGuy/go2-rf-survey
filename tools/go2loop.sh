@@ -34,6 +34,15 @@
 #   bash tools/go2loop.sh bridge-log   last lines of the bridge's log
 #   bash tools/go2loop.sh bridge-down  stop the bridge (sends StopMove on exit)
 #
+#   bash tools/go2loop.sh remote-keys  READ-ONLY: show which buttons the robot
+#                                      sees as you press them on the remote
+#   bash tools/go2loop.sh remote-up    start/abort the loop from the remote
+#                                      (default: hold SELECT+UP 1.5 s = start)
+#   bash tools/go2loop.sh remote-log | remote-down
+#   bash tools/go2loop.sh demo-log     follow a detached demo (demo.sh --detach)
+#   bash tools/go2loop.sh demo-stop    end a detached demo safely
+#   bash tools/go2loop.sh results      recent runs + the scp lines to fetch them
+#
 # Why a script: the node runs in a detached container, and every query needs
 # the ROS environment sourced inside it. Two traps it avoids:
 #  * PYTHONPATH must be PREPENDED -- replacing it hides ROS (no rclpy).
@@ -150,8 +159,66 @@ case "${1:-}" in
   bridge-down)
     if bridge_running; then docker stop "$BRIDGE" >/dev/null && echo "bridge stopped (StopMove sent on exit)"; else echo "bridge not running"; fi
     ;;
+  remote-keys)
+    IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
+      "$SRC; python3 -u /workspace/tools/remote_trigger.py --probe" \
+      2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
+    ;;
+  remote-up)
+    shift
+    docker rm -f go2remote >/dev/null 2>&1
+    mkdir -p "${HOME}/surveys"
+    : > "${HOME}/surveys/go2remote.log"
+    DETACH=go2remote IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
+      "$SRC; python3 -u /workspace/tools/remote_trigger.py $* > /surveys/go2remote.log 2>&1" \
+      >/dev/null || { echo "failed to start remote trigger" >&2; exit 1; }
+    sleep 4
+    if docker ps --filter "name=^go2remote$" --format '{{.Names}}' | grep -q .; then
+      tail -n 3 "${HOME}/surveys/go2remote.log"
+    else
+      echo "remote trigger exited:"; tail -n 20 "${HOME}/surveys/go2remote.log"; exit 1
+    fi
+    ;;
+  remote-log)
+    tail -n "${2:-20}" "${HOME}/surveys/go2remote.log"
+    ;;
+  remote-down)
+    if docker ps --filter "name=^go2remote$" --format '{{.Names}}' | grep -q .; then
+      docker stop go2remote >/dev/null && echo "remote trigger stopped"; else echo "remote trigger not running"; fi
+    ;;
+  demo-log)
+    f=$(ls -t "${HOME}"/surveys/*.demolog 2>/dev/null | head -1)
+    [ -n "$f" ] || { echo "no demo logs in ~/surveys"; exit 1; }
+    echo "== $f   (Ctrl-C stops following; the demo keeps running)"
+    tail -n 40 -f "$f"
+    ;;
+  demo-stop)
+    pidf="${HOME}/surveys/.demo.pid"
+    pid=$(cat "$pidf" 2>/dev/null)
+    if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+      echo "no detached demo running"; rm -f "$pidf"; exit 0
+    fi
+    kill -TERM "$pid" && echo "asked demo (pid $pid) to shut down safely..."
+    for _ in $(seq 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+    f=$(ls -t "${HOME}"/surveys/*.demolog 2>/dev/null | head -1)
+    [ -n "$f" ] && tail -n 8 "$f"
+    ;;
+  results)
+    n=0
+    for d in $(ls -1dt "${HOME}"/surveys/*_20[0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9] 2>/dev/null); do
+      [ -d "$d" ] || continue
+      b=$(basename "$d")
+      outcome=$(grep -o 'demo finished: .*' "$d.demolog" 2>/dev/null | tail -1)
+      echo "$b   ${outcome:-(no demo log)}   $(du -sh "$d" | cut -f1)"
+      [ -f "$d.demolog" ] && echo "    log:      scp go2:surveys/$b.demolog ."
+      [ -f "${d}_map-topdown.png" ] && echo "    floorplan: scp go2:surveys/${b}_map-topdown.png ."
+      echo "    whole run: scp -r go2:surveys/$b* ."
+      n=$((n + 1)); [ "$n" -ge "${2:-5}" ] && break
+    done
+    [ "$n" = 0 ] && echo "no runs in ~/surveys yet"
+    ;;
   *)
-    sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
+    awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
     exit 2
     ;;
 esac

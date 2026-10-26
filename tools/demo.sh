@@ -8,6 +8,18 @@
 # Options: --shape out_and_back|rectangle  --width W (rectangle)
 #          --backend sport|avoid  --name NAME  --no-viz  --no-map
 #
+# Untethered (no laptop cable during the run):
+#   --remote-start  don't start right away: wait (up to --wait S, default 600)
+#                   for SELECT+UP held 1.5 s on the handheld remote. Same combo
+#                   resumes after a pause. SELECT+DOWN, L2+START or pushing a
+#                   stick aborts the route. Check the buttons first, read-only:
+#                   bash tools/go2loop.sh remote-keys
+#   --detach        checks + preflight run here, then the demo carries on in
+#                   the background and survives unplugging. Log, recording and
+#                   floorplan stay in ~/surveys. Later: go2loop.sh demo-log |
+#                   demo-stop | results
+#   Untethered runs stay on --backend sport until the avoid gate has passed.
+#
 # ⚠ Without --rehearse this MOVES THE ROBOT. It refuses unless:
 #   * --i-confirm-breathing (remote L2+A then a SINGLE START, body balancing)
 #   * the stage gate passes: a Stage 1 turn-test PASS today on the same
@@ -27,9 +39,14 @@ G="bash $REPO/tools/go2loop.sh"
 
 LENGTH=""; WIDTH=""; SHAPE=out_and_back; BACKEND=sport; NAME=demo
 BREATHING=0; REHEARSE=0; VIZ=1; MAP=1; SKIP_GATE=0
+DETACH_RUN=0; REMOTE=0; WAIT=600
+ARGS=("$@")
 usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 2; }
 while [ $# -gt 0 ]; do
   case "$1" in
+    --detach) DETACH_RUN=1; shift ;;
+    --remote-start) REMOTE=1; shift ;;
+    --wait) WAIT="$2"; shift 2 ;;
     --length) LENGTH="$2"; shift 2 ;;
     --width) WIDTH="$2"; shift 2 ;;
     --shape) SHAPE="$2"; shift 2 ;;
@@ -47,9 +64,17 @@ done
 [ -n "$LENGTH" ] || { echo "--length is required" >&2; usage; }
 case "$BACKEND" in sport|avoid) ;; *) echo "--backend must be sport or avoid" >&2; exit 2 ;; esac
 
-STAMP=$(date +%Y%m%d_%H%M%S)
+STAMP="${DEMO_STAMP:-$(date +%Y%m%d_%H%M%S)}"   # the detached child keeps the parent's
 BAG="${NAME}_${STAMP}"
 ts() { date +%H:%M:%S; }
+PIDF="$HOME/surveys/.demo.pid"
+CHILD="${DEMO_CHILD:-0}"
+[ "$CHILD" = 1 ] && trap 'rm -f "$PIDF"' EXIT
+
+if [ "$CHILD" = 0 ] && [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
+  echo "REFUSED: a detached demo is already running (pid $(cat "$PIDF")) --"
+  echo "         bash tools/go2loop.sh demo-log  or  demo-stop"; exit 2
+fi
 
 # ---- cheap refusals first: nothing has been started yet --------------------
 if [ "$REHEARSE" = 0 ]; then
@@ -68,18 +93,49 @@ else
   echo "== REHEARSAL: nothing will move (dry-run loop, no bridge)"
 fi
 
-# ---- preflight --------------------------------------------------------------
-echo "== preflight"
-$G preflight --no-update
-rc=$?
-if [ "$REHEARSE" = 0 ] && [ "$rc" != 0 ]; then echo "REFUSED: not motion-ready (above)"; exit 2; fi
-if [ "$REHEARSE" = 1 ] && [ "$rc" -gt 1 ]; then echo "REFUSED: sensors not ready (above)"; exit 2; fi
+# ---- preflight (the detached child relies on the parent's) -------------------
+if [ "$CHILD" = 0 ]; then
+  echo "== preflight"
+  $G preflight --no-update
+  rc=$?
+  if [ "$REHEARSE" = 0 ] && [ "$rc" != 0 ]; then echo "REFUSED: not motion-ready (above)"; exit 2; fi
+  if [ "$REHEARSE" = 1 ] && [ "$rc" -gt 1 ]; then echo "REFUSED: sensors not ready (above)"; exit 2; fi
+fi
+
+# ---- detach: the rest runs in its own session, so unplugging can't kill it --
+if [ "$DETACH_RUN" = 1 ] && [ "$CHILD" = 0 ]; then
+  LOGF="$HOME/surveys/$BAG.demolog"
+  mkdir -p "$HOME/surveys"
+  # setsid: no controlling terminal, so the SSH drop sends no SIGHUP. Run in the
+  # background, bash ignores SIGINT -- demo-stop therefore sends SIGTERM.
+  DEMO_CHILD=1 DEMO_STAMP="$STAMP" setsid nohup bash "$0" "${ARGS[@]}" \
+    > "$LOGF" 2>&1 < /dev/null &
+  echo $! > "$PIDF"
+  echo "== detached (pid $!) -- log ~/surveys/$BAG.demolog"
+  echo "   following until it is ready; Ctrl-C here only stops following"
+  if [ "$REMOTE" = 1 ]; then ready='WAITING FOR THE REMOTE'; else ready='== [0-9:]* start'; fi
+  for _ in $(seq 120); do
+    grep -qE "$ready|demo finished|REFUSED|could not|refused" "$LOGF" 2>/dev/null && break
+    kill -0 "$(cat "$PIDF")" 2>/dev/null || break
+    sleep 1
+  done
+  cat "$LOGF"
+  echo
+  if grep -q 'WAITING FOR THE REMOTE' "$LOGF"; then
+    echo ">> SAFE TO UNPLUG. Walk to the robot with the remote, then hold SELECT+UP 1.5 s."
+  elif grep -qE '== [0-9:]* start' "$LOGF"; then
+    echo ">> running -- unplug when clear of the robot."
+  fi
+  echo "   later, plugged in:  bash tools/go2loop.sh demo-log | demo-stop | results"
+  exit 0
+fi
 
 # ---- from here on, always shut down safely ----------------------------------
 STARTED_BRIDGE=0
 cleanup() {
   trap - INT TERM
   echo "== $(ts) shutting down (safe order)"
+  [ "$REMOTE" = 1 ] && $G remote-down >/dev/null 2>&1   # 0. nothing can restart it
   $G stop >/dev/null 2>&1                       # 1. mission: zero velocity
   if [ "$STARTED_BRIDGE" = 1 ]; then $G bridge-down; fi   # 2. StopMove + hand back
   $G down >/dev/null 2>&1                       # 3. loop node
@@ -118,10 +174,31 @@ LOOP_ARGS="-p shape:=$SHAPE -p length:=$LENGTH -p dry_run:=$DRY"
 [ -n "$WIDTH" ] && LOOP_ARGS="$LOOP_ARGS -p width:=$WIDTH"
 $G up $LOOP_ARGS || { cleanup; exit 1; }
 
-echo "== $(ts) start"
-out=$($G start)
-echo "   $out"
-case "$out" in *success=True*) ;; *) echo "start refused -- see above"; cleanup; exit 1 ;; esac
+if [ "$REMOTE" = 1 ]; then
+  echo "== remote trigger"
+  $G remote-up || { cleanup; exit 1; }
+  echo "== $(ts) WAITING FOR THE REMOTE: hold SELECT+UP 1.5 s to start (up to ${WAIT} s)"
+  echo "   abort any time: SELECT+DOWN, L2+START, or push a stick"
+  wait_end=$(( $(date +%s) + WAIT )); seen=0
+  while :; do
+    # show what the trigger did (e.g. a start the loop refused: path blocked)
+    n=$(wc -l < "$HOME/surveys/go2remote.log")
+    [ "$n" -gt "$seen" ] && tail -n +"$((seen + 1))" "$HOME/surveys/go2remote.log" | sed 's/^/   /'
+    seen=$n
+    s=$($G status); state="${s%% |*}"
+    case "$state" in running|paused|done|aborted) echo "   $(ts) $s"; break ;; esac
+    if [ "$(date +%s)" -ge "$wait_end" ]; then
+      echo "   no start from the remote in ${WAIT} s"; cleanup; echo "== $(ts) demo finished: not started"; exit 1
+    fi
+    sleep 1
+  done
+else
+  echo "== $(ts) start"
+  out=$($G start)
+  echo "   $out"
+  case "$out" in *success=True*) ;; *) echo "start refused -- see above"; cleanup
+    echo "== $(ts) demo finished: not started"; exit 1 ;; esac
+fi
 
 # ---- watch ------------------------------------------------------------------
 if [ "$REHEARSE" = 1 ]; then LIMIT=15; else LIMIT=360; fi
@@ -135,8 +212,13 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     done|aborted) break ;;
     paused)
       if [ "$paused_hint" = 0 ]; then
-        echo "   PAUSED -- clear the way, then in another shell: bash tools/go2loop.sh resume"
-        echo "            or Ctrl-C here to end the demo safely"
+        if [ "$REMOTE" = 1 ]; then
+          echo "   PAUSED -- clear the way, then hold SELECT+UP on the remote to resume"
+          echo "            (or SELECT+DOWN to end the route)"
+        else
+          echo "   PAUSED -- clear the way, then in another shell: bash tools/go2loop.sh resume"
+          echo "            or Ctrl-C here to end the demo safely"
+        fi
         paused_hint=1
       fi ;;
     *) paused_hint=0 ;;
