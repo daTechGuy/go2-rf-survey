@@ -6,6 +6,14 @@ Runs inside the go2-survey:humble container (needs unitree_api):
     IFACE=eth0 bash docker/run.sh python3 /workspace/tools/go2_avoid.py get
     IFACE=eth0 bash docker/run.sh python3 /workspace/tools/go2_avoid.py on
     IFACE=eth0 bash docker/run.sh python3 /workspace/tools/go2_avoid.py off
+    IFACE=eth0 bash docker/run.sh python3 /workspace/tools/go2_avoid.py hold
+    IFACE=eth0 bash docker/run.sh python3 /workspace/tools/go2_avoid.py release
+
+hold / release: UseRemoteCommandFromApi(true/false) (api 1004) -- the API
+takes control from the handheld remote, WITHOUT sending any motion. This is
+the zero-motion safety gate for the bridge's avoid backend: hold, then check
+on the remote that L2+START still damps the robot, then release. Always
+release afterwards; until then the remote's sticks may be ignored.
 
 Talks to the robot's ``obstacles_avoid`` service over
 /api/obstacles_avoid/{request,response}. API ids and JSON fields are from
@@ -32,6 +40,7 @@ from unitree_api.msg import Request, Response
 
 SWITCH_SET = 1001
 SWITCH_GET = 1002
+USE_REMOTE_COMMAND_FROM_API = 1004
 REQ_TOPIC = "/api/obstacles_avoid/request"
 RES_TOPIC = "/api/obstacles_avoid/response"
 
@@ -80,13 +89,24 @@ def describe(r) -> str:
 
 def main(argv) -> int:
     cmd = argv[1] if len(argv) > 1 else "get"
-    if cmd not in ("get", "on", "off"):
+    if cmd not in ("get", "on", "off", "hold", "release"):
         print(__doc__)
         return 2
     rclpy.init()
     node = Node("go2_avoid_cli")
     pub = node.create_publisher(Request, REQ_TOPIC, 10)
     try:
+        if cmd in ("hold", "release"):
+            hold = cmd == "hold"
+            r = call(node, pub, USE_REMOTE_COMMAND_FROM_API,
+                     json.dumps({"is_remote_commands_from_api": hold}))
+            if r is None or r.header.status.code != 0:
+                print(f"{cmd}: {describe(r)}")
+                return 1
+            print("API now HOLDS control -- remote sticks may be ignored. "
+                  "Test L2+START, then run 'release'." if hold
+                  else "control handed back to the handheld remote")
+            return 0
         if cmd != "get":
             r = call(node, pub, SWITCH_SET, json.dumps({"enable": cmd == "on"}))
             if r is None or r.header.status.code != 0:

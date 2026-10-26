@@ -71,6 +71,9 @@ class Probe(Node):
         self.create_subscription(SportModeState, "/sportmodestate", self._on_sport,
                                  qos_profile_sensor_data)
         self.create_subscription(Request, "/api/sport/request", self._on_request, 50)
+        # The bridge's avoid backend drives through obstacles_avoid instead.
+        self.create_subscription(Request, "/api/obstacles_avoid/request",
+                                 self._on_avoid_request, 50)
         self.pub = self.create_publisher(Twist, "/cmd_vel", 10)
 
     def _on_odom(self, m):
@@ -89,6 +92,19 @@ class Probe(Node):
                 self.cmd = float("nan")
         elif api == STOP_MOVE:
             self.cmd = 0.0
+
+    def _on_avoid_request(self, m):
+        # obstacles_avoid Move is api 1003 -- the SAME number as sport
+        # StopMove -- with the turn rate in "yaw", not "z". Normalise to the
+        # sport ids turn_analysis works in: non-zero Move -> MOVE, zero -> STOP.
+        if int(m.header.identity.api_id) != 1003:
+            return                            # SwitchSet / UseRemote: not motion
+        try:
+            yaw = float(json.loads(m.parameter).get("yaw", 0.0))
+        except (ValueError, TypeError):
+            yaw = float("nan")
+        self.cmd = yaw
+        self.api = MOVE if yaw != 0.0 else STOP_MOVE
 
     def spin_for(self, seconds: float) -> None:
         end = time.monotonic() + seconds

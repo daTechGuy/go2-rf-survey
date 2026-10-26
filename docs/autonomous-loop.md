@@ -171,6 +171,42 @@ odometry heading was logged, so a real late rotation and an odometry jump
 could not be told apart — which is why the test is now instrumented as
 above. Do not proceed to Stage 2 until Stage 1 passes.
 
+## Optional: drive through Unitree's obstacle avoidance (`backend:=avoid`)
+
+By default the bridge sends **sport-mode `Move`** (api 1008). Unitree's
+built-in obstacle avoidance — confirmed ON on this robot — is not known to
+filter that, so the loop's protection is its own LiDAR stop.
+
+`backend:=avoid` instead drives through Unitree's **obstacle-avoidance
+`Move`** (api 1003 on `obstacles_avoid`), so the robot's own avoidance applies
+*on top of* our LiDAR stop. Sequence from Unitree's official Python example:
+`SwitchSet(true)` → `UseRemoteCommandFromApi(true)` → `Move` … → `Move(0)` →
+`UseRemoteCommandFromApi(false)`.
+
+**The catch:** `UseRemoteCommandFromApi(true)` lets the API **override the
+handheld remote**. The bridge therefore claims control only when it has
+motion to send, keeps it through pauses, and **hands it back to the remote**
+on watchdog, e-stop, damp and shutdown. Unitree does not document whether
+L2 + START still damps the robot while the API holds control.
+
+### Gate — must pass before the avoid backend moves the robot (no motion)
+
+1. Robot standing, open floor, you on the remote.
+2. `bash tools/go2loop.sh avoid hold` — the API takes control. Nothing moves.
+3. **Press L2 + START.** Pass: the robot damps (goes limp / lies down) as it
+   normally would. Optionally push a stick gently first: with the API holding
+   control it should *not* walk.
+4. `bash tools/go2loop.sh avoid release` — always, pass or fail.
+
+If L2 + START does **not** work while held, do not use `backend:=avoid`.
+
+If it passes, Stage 1 can be repeated through the avoid path:
+```bash
+bash tools/go2loop.sh bridge-up -p backend:=avoid
+bash tools/go2loop.sh turn-test --i-confirm-breathing
+bash tools/go2loop.sh bridge-down          # zeroes and hands back to the remote
+```
+
 ## Stage 2 — live, 1 m out-and-back, open floor
 
 Smallest possible real route. Clear ~1.5 m around it. You on the remote.

@@ -14,6 +14,10 @@
 #
 #   bash tools/go2loop.sh mode         which motion mode owns the legs (read-only;
 #                                      sport Move needs 'normal')
+#   bash tools/go2loop.sh avoid get|on|off|hold|release
+#                                      Unitree's built-in obstacle avoidance;
+#                                      hold/release = API takes/returns control
+#                                      from the remote (no motion)
 #   bash tools/go2loop.sh bridge-up    start go2_survey_bridge (sends BalanceStand
 #                                      ~1 s after start: a posture change)
 #   bash tools/go2loop.sh turn-test --i-confirm-breathing
@@ -78,6 +82,10 @@ case "${1:-}" in
     IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" python3 /workspace/tools/go2_mode.py \
       2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
     ;;
+  avoid)
+    IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" python3 /workspace/tools/go2_avoid.py "${2:-get}" \
+      2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
+    ;;
   bridge-up)
     shift
     docker rm -f "$BRIDGE" >/dev/null 2>&1
@@ -101,7 +109,7 @@ case "${1:-}" in
     if bridge_running; then docker stop "$BRIDGE" >/dev/null && echo "bridge stopped (StopMove sent on exit)"; else echo "bridge not running"; fi
     ;;
   *)
-    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

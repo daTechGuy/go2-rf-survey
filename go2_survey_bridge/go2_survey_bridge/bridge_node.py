@@ -33,9 +33,10 @@ from std_srvs.srv import Trigger
 
 from go2_survey_bridge import sport_api
 from go2_survey_bridge.limits import Limits, Velocity, VelocityLimiter, Watchdog
+from go2_survey_bridge.motion_backend import AVOID, SPORT, make_backend
 
 try:
-    from unitree_api.msg import Request
+    from unitree_api.msg import Request, Response
 except ImportError as exc:  # pragma: no cover - environment, not logic
     raise ImportError(
         "unitree_api messages not found. Inside the go2-survey:humble "
@@ -65,8 +66,13 @@ class CmdVelBridge(Node):
         # when the WiFi scan happens.
         self.declare_parameter("deadband_xy", 0.02)
         self.declare_parameter("deadband_yaw", 0.03)
+        # "sport" (default): sport-mode Move. "avoid": Unitree's
+        # obstacle-avoidance Move, which takes control from the handheld
+        # remote while driving -- see motion_backend.py before using it.
+        self.declare_parameter("backend", "sport")
 
         g = self.get_parameter
+        self.backend = make_backend(str(g("backend").value))
         self.limits = Limits(
             max_vx=g("max_vx").value,
             max_vy=g("max_vy").value,
@@ -94,6 +100,13 @@ class CmdVelBridge(Node):
         self.req_pub = self.create_publisher(
             Request, sport_api.SPORT_REQUEST_TOPIC, qos
         )
+        self.service_pubs = {SPORT: self.req_pub}
+        if self.backend.name == "avoid":
+            self.service_pubs[AVOID] = self.create_publisher(
+                Request, f"/api/{AVOID}/request", qos)
+            # Claims and releases are fire-and-forget; surface any refusal.
+            self.create_subscription(
+                Response, f"/api/{AVOID}/response", self._on_avoid_response, 10)
         self.status_pub = self.create_publisher(String, "~/status", 10)
 
         self.create_subscription(
@@ -119,9 +132,11 @@ class CmdVelBridge(Node):
             # match with the subscriber or the first request is dropped.
             self._startup_timer = self.create_timer(1.0, self._startup)
 
+        target = sport_api.SPORT_REQUEST_TOPIC if self.backend.name == "sport" \
+            else f"/api/{AVOID}/request (obstacle-avoidance Move; takes over from the remote while driving)"
         self.get_logger().info(
             f"bridge up: {g('cmd_vel_topic').value} -> "
-            f"{sport_api.SPORT_REQUEST_TOPIC} at {rate:.0f} Hz\n"
+            f"{target} at {rate:.0f} Hz, backend={self.backend.name}\n"
             f"  limits vx={self.limits.max_vx} vy={self.limits.max_vy} "
             f"vyaw={self.limits.max_vyaw}\n"
             f"  watchdog {self.watchdog.timeout_s}s"
@@ -132,13 +147,24 @@ class CmdVelBridge(Node):
     def _now(self) -> float:
         return self.get_clock().now().nanoseconds * 1e-9
 
-    def _send(self, api_id: int, parameter: str = "") -> None:
+    def _send(self, api_id: int, parameter: str = "", service: str = SPORT) -> None:
         msg = Request()
         msg.header.identity.id = self._request_id
         msg.header.identity.api_id = api_id
         msg.parameter = parameter
-        self.req_pub.publish(msg)
+        self.service_pubs[service].publish(msg)
         self._request_id += 1
+
+    def _emit(self, requests) -> None:
+        """Publish a backend's (service, api_id, parameter) sequence in order."""
+        for service, api_id, parameter in requests:
+            self._send(api_id, parameter, service)
+
+    def _on_avoid_response(self, msg) -> None:
+        code = int(msg.header.status.code)
+        if code != 0:
+            self.get_logger().warning(
+                f"obstacles_avoid refused api {msg.header.identity.api_id}: code {code}")
 
     def _startup(self) -> None:
         self._startup_timer.cancel()
@@ -169,7 +195,9 @@ class CmdVelBridge(Node):
             )
             self.limiter.stop_immediately()
             self._target = Velocity()
-            self._send(sport_api.STOP_MOVE)
+            # Release, not just stop: commands have ceased, so with the avoid
+            # backend the robot goes back to the handheld remote.
+            self._emit(self.backend.release())
             self._sent_stop = True
             self._publish_status("watchdog_stop")
             return
@@ -184,14 +212,14 @@ class CmdVelBridge(Node):
             # Inside the deadband: issue StopMove once, then hold still. This
             # is the state the robot is in while a WiFi scan runs.
             if not self._sent_stop:
-                self._send(sport_api.STOP_MOVE)
+                self._emit(self.backend.stop())     # a pause: keep control
                 self._sent_stop = True
                 self.limiter.reset()
                 self._publish_status("idle")
             return
 
         self._sent_stop = False
-        self._send(sport_api.MOVE, sport_api.move_parameter(out.vx, out.vy, out.vyaw))
+        self._emit(self.backend.move(out.vx, out.vy, out.vyaw))
 
     def _publish_status(self, state: str) -> None:
         v = self.limiter.current
@@ -210,7 +238,7 @@ class CmdVelBridge(Node):
     def _halt(self) -> None:
         self.limiter.stop_immediately()
         self._target = Velocity()
-        self._send(sport_api.STOP_MOVE)
+        self._emit(self.backend.release())       # stop AND hand back to the remote
         self._sent_stop = True
 
     def _simple(self, api_id: int, response, note: str = ""):
@@ -245,6 +273,7 @@ class CmdVelBridge(Node):
         # likely to be wanted in an emergency.
         self.limiter.stop_immediately()
         self._target = Velocity()
+        self._emit(self.backend.release())       # hand back first, then go limp
         self._send(sport_api.DAMP)
         res.success = True
         res.message = "sent Damp -- robot is limp"
@@ -273,7 +302,7 @@ class CmdVelBridge(Node):
 
     def destroy_node(self) -> bool:
         try:
-            self._send(sport_api.STOP_MOVE)
+            self._emit(self.backend.release())
         except Exception:
             pass
         return super().destroy_node()

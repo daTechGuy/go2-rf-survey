@@ -23,6 +23,7 @@ SUITES = [
     "tools/tests/test_turn_analysis.py",
     "go2_survey_bridge/test/test_limits.py",
     "go2_survey_bridge/test/test_sport_api.py",
+    "go2_survey_bridge/test/test_motion_backend.py",
     "go2_survey_loop/test/test_geometry.py",
     "go2_survey_loop/test/test_obstacles.py",
     "go2_survey_loop/test/test_follower.py",
