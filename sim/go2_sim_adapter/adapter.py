@@ -82,7 +82,6 @@ class SimAdapter(Node):
         self.cloud_pub = self.create_publisher(PointCloud2, "/utlidar/cloud_deskewed", qos_profile_sensor_data)
         self.state_pub = self.create_publisher(SportModeState, "/sportmodestate", qos_profile_sensor_data)
 
-        self.services = {}
         for name, handler in (("sport", self.model.sport),
                               ("obstacles_avoid", self.model.avoid),
                               ("motion_switcher", self.model.motion_switcher)):
