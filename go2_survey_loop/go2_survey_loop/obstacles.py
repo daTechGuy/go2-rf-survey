@@ -26,11 +26,19 @@ from dataclasses import dataclass
 from go2_survey_loop.geometry import Pose2D
 
 
+# The standing Go2, measured by dancher00/go2-nav2-wifi (MIT) from the URDF
+# visual meshes over 33 live joint samples (docs/GO2-FOOTPRINT.md there,
+# 2026-09-11), in base_link: x -0.353..+0.332, y -0.170..+0.193 m. Their
+# padded Nav2 envelope (shared with go2_ros2_sdk and BotBrain) is
+# x -0.45..+0.36, y +-0.20, padding 0.03. test/test_footprint.py holds the
+# defaults below to these numbers.
+
+
 @dataclass(frozen=True)
 class ObstacleParams:
-    body_front: float = 0.35        # m, robot centre to nose
-    body_rear: float = 0.35         # m, robot centre to tail
-    body_half_width: float = 0.20   # m
+    body_front: float = 0.35        # m, robot centre to nose (measured 0.332)
+    body_rear: float = 0.40         # m, centre to tail (measured 0.353; +leg swing)
+    body_half_width: float = 0.20   # m (measured 0.193)
     stop_distance: float = 0.50     # m beyond the nose
     lane_half_width: float = 0.35   # m, half-width of the forward lane
     clearance_radius: float = 0.55  # m from centre, all directions

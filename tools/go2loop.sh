@@ -27,6 +27,9 @@
 #                                      the gate for bridge backend sport_prep
 #   bash tools/go2loop.sh viz-up       live view: foxglove_bridge + live map;
 #                                      connect Foxglove to ws://192.168.123.18:8765
+#                                      (+ front camera on /go2/camera/compressed)
+#   bash tools/go2loop.sh camera-check READ-ONLY: one camera picture to
+#                                      ~/surveys/camera_test.jpg
 #   bash tools/go2loop.sh viz-reset    clear the live map and trail
 #   bash tools/go2loop.sh viz-down     stop the live view
 #   bash tools/go2loop.sh bridge-up    start go2_survey_bridge (sends BalanceStand
@@ -129,6 +132,7 @@ case "${1:-}" in
     docker rm -f go2viz >/dev/null 2>&1
     mkdir -p "${HOME}/surveys"
     : > "${HOME}/surveys/go2viz.log"; : > "${HOME}/surveys/go2viz_bridge.log"
+    : > "${HOME}/surveys/go2viz_camera.log"
     DETACH=go2viz IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash /workspace/tools/viz_entry.sh \
       >/dev/null || { echo "failed to start viz container" >&2; exit 1; }
     sleep 6
@@ -137,10 +141,16 @@ case "${1:-}" in
       if grep -qi "error" "${HOME}/surveys/go2viz_bridge.log"; then
         echo "foxglove_bridge reported:"; tail -n 5 "${HOME}/surveys/go2viz_bridge.log"
       fi
+      show_log "${HOME}/surveys/go2viz_camera.log" 2
       echo "Foxglove app -> Open connection -> Foxglove WebSocket -> ws://192.168.123.18:8765"
     else
       echo "viz exited:"; tail -n 20 "${HOME}/surveys/go2viz.log" "${HOME}/surveys/go2viz_bridge.log"; exit 1
     fi
+    ;;
+  camera-check)
+    # read-only: one picture from the front camera to ~/surveys/camera_test.jpg
+    IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c       "$SRC; python3 -u /workspace/tools/front_camera.py --once /surveys/camera_test.jpg"       2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
+    [ -s "${HOME}/surveys/camera_test.jpg" ] && echo "on the laptop:  scp go2:surveys/camera_test.jpg ."
     ;;
   viz-reset)
     docker exec go2viz bash -c "source /opt/ros/humble/setup.bash; timeout 20 ros2 service call /go2_live_map/reset std_srvs/srv/Trigger 2>/dev/null | grep -o 'success=.*'" \

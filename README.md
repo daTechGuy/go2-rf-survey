@@ -92,6 +92,7 @@ built-in LiDAR ──► go2_survey_loop ──► /cmd_vel ──► go2_survey
        │
        ├──► ros2 bag ──► tools/bag_to_map.py ──► floorplan PNG + occupancy grid
        └──► tools/live_map.py + foxglove_bridge ──► Foxglove on the laptop
+front camera (videohub) ──► tools/front_camera.py ──────┘
 handheld remote ──► /wirelesscontroller ──► tools/remote_trigger.py ──► start / resume / abort
 ```
 
@@ -444,6 +445,7 @@ tools/                   ✅ post-processing, runs off-robot
   remote_trigger.py        start/abort from the handheld remote (+ remote_keys)
   bag_to_map.py            recording → floorplan PNG + occupancy grid
   live_map.py, viz_entry.sh  live view for Foxglove
+  front_camera.py          front camera -> Foxglove (+ camera_frames, pure)
   go2_mode.py, go2_avoid.py, unitree_rpc.py   Unitree API queries
   fake_robot/              the scripts above vs fake docker/ROS/remote
 docker/                  ✅ Humble container for the Jetson (D1)

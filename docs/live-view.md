@@ -8,10 +8,11 @@ direct wired link — no NoMachine, no X11.
 robot container                                laptop
 foxglove_bridge  ── ws://192.168.123.18:8765 ──▶  Foxglove app
 live_map.py  (map, trail, pose)
+front_camera.py (what the robot sees)
 ```
 
-Both robot-side pieces only **listen** to the robot and publish
-visualisation topics. They command nothing.
+The robot-side pieces only **listen** to the robot, or ask its camera for
+pictures, and publish visualisation topics. They command nothing.
 
 ## Robot side
 
@@ -42,7 +43,12 @@ Logs: `~/surveys/go2viz.log`, `~/surveys/go2viz_bridge.log`.
    | `/go2/path` | where it has walked | line |
    | `/go2/pose` | where it is now | arrow |
 
-5. Optional: a **Raw Messages** panel on `/go2_loop/status` shows the
+5. Add an **Image** panel on `/go2/camera/compressed`: the robot's front
+   camera, JPEG straight from the robot (5 fps; `CAMERA_FPS=2 bash tools/go2loop.sh viz-up`
+   for less). Check it once, read-only, with `bash tools/go2loop.sh camera-check`,
+   which saves one picture to `~/surveys/camera_test.jpg`. If the camera
+   service isn't found, the map still works; see `~/surveys/go2viz_camera.log`.
+6. Optional: a **Raw Messages** panel on `/go2_loop/status` shows the
    autonomous loop's state (`running | waypoint 1/2 | ...`, pauses and why).
 
 Save the layout (Layouts → Save) so it reopens next time.

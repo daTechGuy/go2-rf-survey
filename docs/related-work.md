@@ -49,9 +49,20 @@ legged robot, or surveying **every** access point in range, as this repo does.
    [navigation incident](https://github.com/dancher00/go2-nav2-wifi/blob/main/docs/NAVIGATION-INCIDENT-2026-09-12.md)
    traced a bad turn to a 5 s clock skew between laptop and Jetson. Our loop
    node uses receipt time, on the robot, for exactly this reason.
-4. **Not yet taken, worth it:** the front camera into Foxglove
-   (`robot_front_camera_bridge.py`, via unitree_sdk2's VideoClient); their
-   measured footprint (`docs/GO2-FOOTPRINT.md`) to check our 0.55 m clearance.
+4. **Their measured footprint** (`docs/GO2-FOOTPRINT.md`): standing robot
+   68.5 × 36.3 cm, furthest corner 0.40 m from centre; padded Nav2 envelope
+   0.53 m. It **confirmed our 0.55 m clearance ring** and showed our "ignore
+   my own body" box was 3 mm short at the rear (0.35 vs 0.353 m), so it is now
+   0.40 m. Encoded in `go2_survey_loop/test/test_footprint.py`; numbers in
+   [autonomous-loop.md](autonomous-loop.md#will-it-fit-tight-aisles).
+5. **The front camera, the idea but not the method.** They get JPEGs through
+   unitree_sdk2_python or a C++ helper built on the robot, then decode with
+   OpenCV. The camera is a plain Unitree service (`videohub`, api 1001, JPEG in
+   the reply's `binary`), so `tools/front_camera.py` asks for it over the same
+   ROS topics the bridge already uses and publishes the JPEG untouched as a
+   `CompressedImage`: nothing to build or install on the robot.
+   **Unverified:** that `/api/videohub/*` is reachable over ROS on this robot,
+   like sport is. `go2loop.sh camera-check` (read-only) settles it.
 
 ## Go2 security (cyber-education material)
 

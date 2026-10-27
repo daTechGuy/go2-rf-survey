@@ -25,7 +25,24 @@ If the aisle is tight, choose a turn-round spot in open floor (the front of
 the room, a gap by the board) and set `length` to reach it. Stage 0 measures
 the real clearance with the robot standing still — check it before anything
 moves. Shrinking `clearance_radius` is possible but cuts the margin while
-turning (the body is ~0.7 m long); don't go below 0.45 without a reason.
+turning; **don't go below 0.50**.
+
+The numbers, from the Go2's measured footprint (see [related-work.md](related-work.md)):
+
+| | Size | Furthest corner from centre (what a turn on the spot sweeps) |
+|---|---|---|
+| Standing robot, measured from its 3D model over 33 live poses | 68.5 × 36.3 cm | **0.40 m** |
+| Nav2 envelope used by go2_ros2_sdk, BotBrain, go2-nav2-wifi | 81 × 40 cm | 0.49 m |
+| …plus their 3 cm padding | 87 × 46 cm | 0.53 m |
+| **Our clearance ring** | | **0.55 m** |
+
+So 0.55 m clears the standing robot's sweep by 15 cm and the padded envelope
+by 2 cm. Below 0.50 the ring sits inside the envelope's sweep. The body box
+(what the robot ignores as itself) is x −0.40…+0.35, y ±0.20 m, covering the
+measured robot (whose rear reaches 0.353 m; the box was 0.35 m until
+2026-10-26) while staying inside the envelope. `go2_survey_loop/test/test_footprint.py`
+holds these to the measurements. They're the standing pose, not every gait's
+leg swing.
 
 ## How it is kept safe
 

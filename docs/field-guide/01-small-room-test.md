@@ -166,10 +166,14 @@ can be changed in the software once we know what your remote sends.
    → `ws://192.168.123.18:8765` → **Open**.
 3. [ ] First time only: add a **3D** panel and set its **Display frame** to
    `odom`, then turn on `/go2/map_cloud`, `/go2/scan_lite`, `/go2/path` and `/go2/pose`.
+   Add an **Image** panel on `/go2/camera/compressed`: the robot's front camera.
    Save the layout (**Layouts → Save as** "Go2 map").
    Details: [../live-view.md](../live-view.md).
 4. [ ] You see the room as dots, building up. Walk around the robot: you
    appear in the scan.
+5. [ ] The Image panel shows the view from the robot's front camera. If it
+   stays blank, run `bash tools/go2loop.sh camera-check` and write down what
+   it prints. Nothing else depends on the camera, so carry on.
 
 ## I. Stand it up and check it's ready to walk
 

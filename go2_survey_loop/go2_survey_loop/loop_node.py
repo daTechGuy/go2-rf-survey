@@ -99,7 +99,7 @@ class LoopNode(Node):
         d("lane_half_width", 0.35)
         d("clearance_radius", 0.55)
         d("body_front", 0.35)
-        d("body_rear", 0.35)
+        d("body_rear", 0.40)
         d("body_half_width", 0.20)
         d("obstacle_z_min", 0.10)
         d("obstacle_z_max", 1.00)
