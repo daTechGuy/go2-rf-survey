@@ -143,7 +143,15 @@ class SimAdapter(Node):
                 self.get_logger().warning(f"no TF {ODOM_FRAME} <- {m.header.frame_id} yet: {exc}")
                 self._warned_tf = True
             return
-        pts = point_cloud2.read_points_numpy(m, field_names=("x", "y", "z"), skip_nans=True)
+        try:
+            # read_points, not read_points_numpy: the Velodyne cloud mixes
+            # float32 x/y/z with uint16 ring, which read_points_numpy refuses.
+            a = point_cloud2.read_points(m, field_names=("x", "y", "z"), skip_nans=True)
+            pts = np.column_stack([a["x"], a["y"], a["z"]])
+        except Exception as exc:  # noqa: BLE001 -- a bad cloud must not kill the adapter
+            self.get_logger().error(f"cloud conversion failed: {exc}",
+                                    throttle_duration_sec=10.0)
+            return
         if pts.size == 0:
             return
         r = quat_to_matrix(t.transform.rotation)
