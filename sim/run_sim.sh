@@ -54,12 +54,13 @@ case "${1:-}" in
     xd="$(ros2 pkg prefix go2_description)/share/go2_description/xacro"
     vlp="$LOGS/.sim_velodyne.xacro"; robot="$LOGS/.sim_robot_VLP.xacro"
     sed -e 's|<sensor name="velodyne-VLP16" type="ray">|&<always_on>true</always_on>|' \
+        -e 's|<update_rate>10</update_rate>|<update_rate>15</update_rate>|' \
         -e 's|<samples>16</samples>|<samples>32</samples>|' \
         -e 's|<min_angle>-0.2617993877991494</min_angle>|<min_angle>-0.8726646259971648</min_angle>|' \
         -e 's|<min>0.3</min>|<min>0.1</min>|' \
         -e 's|<min_range>0.9</min_range>|<min_range>0.15</min_range>|' "$xd/velodyne.xacro" > "$vlp"
     sed "s|\$(find go2_description)/xacro/velodyne.xacro|$vlp|" "$xd/robot_VLP.xacro" > "$robot"
-    for want in always_on '<samples>32' '0.8726646' '<min>0.1' '<min_range>0.15'; do
+    for want in always_on '<update_rate>15' '<samples>32' '0.8726646' '<min>0.1' '<min_range>0.15'; do
       grep -q -- "$want" "$vlp" || { echo "LiDAR patch failed ($want): upstream changed?" >&2; exit 1; }
     done
     grep -q "$vlp" "$robot" || { echo "could not point $robot at the patched LiDAR" >&2; exit 1; }
