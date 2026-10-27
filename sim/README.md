@@ -65,6 +65,19 @@ desks either side of the aisle from the door; `--aisle` sets the width).
 | Classroom 3 m, 1.2 m aisle | out, turn, then **paused** on the way back: the turn shifted it 14 cm sideways, desks inside the 0.55 m ring |
 | Classroom 3 m, 1.4 m aisle | out, turn, **paused** briefly on the way back (12 cm off-centre); pauses wait for a resume, and the 5 min limit ended it |
 
+**After the fix (2026-10-27): the follower steers along the route line**
+(`lookahead` 0.6 m) instead of at the corner, which pulls the robot back to
+the centre after a turn.
+
+| Aisle | Before (aiming at the corner) | After (route line) |
+|---|---|---|
+| 1.4 m (15 cm slack each side) | paused on the return leg | **2 of 2 done** |
+| 1.2 m (5 cm slack each side) | paused on the return leg | **3 of 4 done**; the miss: 6 cm off-centre where the desks begin, 0.8 m after the turn |
+
+A 1.2 m aisle stays marginal: the turn shifts the robot sideways and it has
+less than a metre to re-centre before the desks. Turning further beyond the
+last desk, or a narrower side check on straight legs, would add margin.
+
 Found and fixed in our code: the robot's own legs drawn into every floorplan
 (`bag_to_map` now leaves them out); rays through an open door stretching a
 floorplan to 136 m (`--max-range`, default 15 m); container log times in
