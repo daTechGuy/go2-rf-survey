@@ -362,5 +362,6 @@ Typed as their defaults (`length:=4.0`, not `length:=4`).
 | `max_vx` / `max_vyaw` | 0.30 / 0.50 | |
 | `stop_distance` | 0.50 | m beyond the nose |
 | `clearance_radius` | 0.55 | m from centre, all round |
+| `lookahead` | 0.6 | m along the route line the robot steers at; pulls it back to the centre after a turn. 0 = aim at each corner (the old behaviour) |
 | `auto_resume_s` | 0.0 | >0 resumes after an obstacle has been clear this long; 0 = only `~/resume` |
 | `max_duration_s` | 300 | |
