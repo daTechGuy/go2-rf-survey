@@ -218,16 +218,19 @@ BODY_FRONT, BODY_REAR, BODY_HALF_WIDTH = 0.40, 0.45, 0.25
 
 
 def drop_body(xyz: np.ndarray, pose, front=BODY_FRONT, rear=BODY_REAR,
-              half_width=BODY_HALF_WIDTH) -> np.ndarray:
-    """Points of one scan outside the robot's outline at ``pose`` (x, y, yaw)."""
+              half_width=BODY_HALF_WIDTH, max_range=None) -> np.ndarray:
+    """Points of one scan outside the robot's outline at ``pose`` (x, y, yaw)
+    and, if given, within ``max_range`` of it (horizontally)."""
     if pose is None or len(xyz) == 0:
         return xyz
     x, y, yaw = pose
     c, s = math.cos(yaw), math.sin(yaw)
     dx, dy = xyz[:, 0] - x, xyz[:, 1] - y
     xr, yr = c * dx + s * dy, -s * dx + c * dy
-    inside = (xr >= -rear) & (xr <= front) & (np.abs(yr) <= half_width)
-    return xyz[~inside]
+    drop = (xr >= -rear) & (xr <= front) & (np.abs(yr) <= half_width)
+    if max_range:
+        drop |= dx * dx + dy * dy > max_range * max_range
+    return xyz[~drop]
 
 
 def read_bag(uri: Path, cloud_topic: str, odom_topic: str):
@@ -276,6 +279,10 @@ def main() -> int:
                     help="build even if clouds are not in a world-fixed frame")
     ap.add_argument("--keep-body", action="store_true",
                     help="keep the LiDAR's view of the robot itself (legs) in the map")
+    ap.add_argument("--max-range", type=float, default=15.0,
+                    help="ignore returns further than this from the robot, m (0 = keep all). "
+                         "A low ray through an open door can land tens of metres away "
+                         "and stretch the floorplan to fit it.")
     args = ap.parse_args()
 
     out = args.out or args.bag.with_name(args.bag.name + "_map")
@@ -292,8 +299,9 @@ def main() -> int:
             frames.add(frame)
             n += 1
             if n % args.every == 0:
-                if not args.keep_body:
-                    kept = drop_body(xyz, pose)
+                if not args.keep_body or args.max_range:
+                    kept = drop_body(xyz, pose, max_range=args.max_range or None,
+                                     **({"front": -1e9} if args.keep_body else {}))
                     dropped += len(xyz) - len(kept)
                     xyz = kept
                 acc.add(xyz)
@@ -317,7 +325,8 @@ def main() -> int:
 
     print(f"scans      {acc.scans} used of {n}, {acc.raw_points:,} raw -> {stats['points']:,} voxels")
     if not args.keep_body:
-        print(f"robot      {dropped:,} points of the robot itself left out (--keep-body keeps them)")
+        print(f"filtered   {dropped:,} points left out: the robot itself and returns "
+              f"beyond {args.max_range:g} m")
     print(f"floor      z = {stats['floor_z']:.2f} m in {sorted(frames)[0]}")
     x0, x1, y0, y1 = stats["extent"]
     print(f"extent     {x1 - x0:.1f} x {y1 - y0:.1f} m ({stats['grid'][0]}x{stats['grid'][1]} cells)")
