@@ -23,6 +23,7 @@ from __future__ import annotations
 import math
 import sys
 import time
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -80,6 +81,7 @@ class SimAdapter(Node):
             raise ValueError("pose_source must be ground_truth or ekf")
         odom_topic = "/odom/ground_truth" if self.pose_source == "ground_truth" else "/odom"
         self._base_to_sensor = None      # static base_link <- LiDAR transform, looked up once
+        self._pose_hist = deque(maxlen=400)  # (sim stamp ns, pose): ~4 s of ground truth
         self.tf = Buffer()
         self.tf_listener = TransformListener(self.tf, self)
         self.odom: Odometry | None = None
@@ -136,6 +138,8 @@ class SimAdapter(Node):
     # -------------------------------------------------------------- sensors
     def _on_odom(self, m: Odometry) -> None:
         self.odom, self.odom_t = m, time.monotonic()
+        stamp = m.header.stamp.sec * 1_000_000_000 + m.header.stamp.nanosec
+        self._pose_hist.append((stamp, m.pose.pose))     # sim-time stamped
 
     def _publish_odom(self) -> None:
         """The sim's EKF odom runs ~40 Hz; the robot's ~150 Hz and preflight
@@ -158,7 +162,8 @@ class SimAdapter(Node):
             return
         try:
             if self.pose_source == "ground_truth":
-                rot, trans = self._ground_truth_transform(m.header.frame_id)
+                stamp = m.header.stamp.sec * 1_000_000_000 + m.header.stamp.nanosec
+                rot, trans = self._ground_truth_transform(m.header.frame_id, stamp)
             else:
                 t = self.tf.lookup_transform(ODOM_FRAME, m.header.frame_id, Time())
                 rot = quat_to_matrix(t.transform.rotation)
@@ -185,17 +190,22 @@ class SimAdapter(Node):
         self.cloud_pub.publish(point_cloud2.create_cloud_xyz32(m.header, world.astype(np.float32)))
         self._last_cloud = now
 
-    def _ground_truth_transform(self, sensor_frame: str):
-        """odom <- sensor as (R, t): Gazebo's exact base_link pose composed
-        with the URDF's fixed base_link <- sensor mount."""
+    def _ground_truth_transform(self, sensor_frame: str, stamp_ns: int):
+        """odom <- sensor as (R, t): Gazebo's exact base_link pose *at the
+        scan's own sim time*, composed with the URDF's fixed base_link <-
+        sensor mount. The latest pose is not good enough: a trotting body
+        pitches, and a degree of pitch lifts the floor ~5 cm per 3 m."""
         if self._base_to_sensor is None:
             t = self.tf.lookup_transform("base_link", sensor_frame, Time())
             tr = t.transform.translation
             self._base_to_sensor = (quat_to_matrix(t.transform.rotation),
                                     np.array([tr.x, tr.y, tr.z]))
-        if self.odom is None or time.monotonic() - self.odom_t > 0.2:
+        if self.odom is None or time.monotonic() - self.odom_t > 0.2 or not self._pose_hist:
             raise LookupError("no fresh ground-truth pose")
-        p, q = self.odom.pose.pose.position, self.odom.pose.pose.orientation
+        t_near, pose = min(self._pose_hist, key=lambda sp: abs(sp[0] - stamp_ns))
+        if abs(t_near - stamp_ns) > 50_000_000:             # 50 ms of sim time
+            raise LookupError("no ground-truth pose near the scan's time")
+        p, q = pose.position, pose.orientation
         r_wb, t_wb = quat_to_matrix(q), np.array([p.x, p.y, p.z])
         r_bs, t_bs = self._base_to_sensor
         return r_wb @ r_bs, r_wb @ t_bs + t_wb
