@@ -63,13 +63,23 @@ class SimAdapter(Node):
         super().__init__("go2_sim_adapter")
         d = self.declare_parameter
         d("sim_cmd_topic", "/sim/cmd_vel")
-        d("sim_odom_topic", "/odom")
+        # "ground_truth" (default): Gazebo's exact base_link pose places both
+        # the odometry and the cloud. The robot's /utlidar/* come from
+        # Unitree's LiDAR-inertial odometry, which is good; CHAMP's leg-EKF
+        # ("ekf", /odom) misses the trot's pitch and bounce, so a walking
+        # robot sees its own floor as obstacles and loses its position.
+        d("pose_source", "ground_truth")
         d("sim_cloud_topic", "/velodyne_points")
         d("cloud_rate_hz", 15.0)
         d("move_timeout_s", 0.0)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
 
         self.model = RobotModel(move_timeout_s=float(g("move_timeout_s")))
+        self.pose_source = str(g("pose_source"))
+        if self.pose_source not in ("ground_truth", "ekf"):
+            raise ValueError("pose_source must be ground_truth or ekf")
+        odom_topic = "/odom/ground_truth" if self.pose_source == "ground_truth" else "/odom"
+        self._base_to_sensor = None      # static base_link <- LiDAR transform, looked up once
         self.tf = Buffer()
         self.tf_listener = TransformListener(self.tf, self)
         self.odom: Odometry | None = None
@@ -90,7 +100,7 @@ class SimAdapter(Node):
             self.create_subscription(Request, f"/api/{name}/request",
                                      lambda m, h=handler, p=pub, n=name: self._on_request(m, h, p, n), 10)
 
-        self.create_subscription(Odometry, g("sim_odom_topic"), self._on_odom, qos_profile_sensor_data)
+        self.create_subscription(Odometry, odom_topic, self._on_odom, qos_profile_sensor_data)
         self.create_subscription(PointCloud2, g("sim_cloud_topic"), self._on_cloud, qos_profile_sensor_data)
         self.create_subscription(WirelessController, "/wirelesscontroller", self._on_remote,
                                  qos_profile_sensor_data)
@@ -98,7 +108,7 @@ class SimAdapter(Node):
         self.create_timer(0.01, self._publish_odom)  # 100 Hz /utlidar/robot_odom
         self.get_logger().info(
             f"sim adapter up: sport/avoid/motion_switcher -> {g('sim_cmd_topic')}; "
-            f"{g('sim_odom_topic')} -> /utlidar/robot_odom; "
+            f"{odom_topic} -> /utlidar/robot_odom (pose_source={self.pose_source}); "
             f"{g('sim_cloud_topic')} -> /utlidar/cloud_deskewed (odom frame)")
 
     # ------------------------------------------------------------ requests
@@ -147,10 +157,16 @@ class SimAdapter(Node):
         if now - self._last_cloud < self._cloud_period:
             return
         try:
-            t = self.tf.lookup_transform(ODOM_FRAME, m.header.frame_id, Time())
-        except TransformException as exc:
+            if self.pose_source == "ground_truth":
+                rot, trans = self._ground_truth_transform(m.header.frame_id)
+            else:
+                t = self.tf.lookup_transform(ODOM_FRAME, m.header.frame_id, Time())
+                rot = quat_to_matrix(t.transform.rotation)
+                tr = t.transform.translation
+                trans = np.array([tr.x, tr.y, tr.z])
+        except (TransformException, LookupError) as exc:
             if not self._warned_tf:
-                self.get_logger().warning(f"no TF {ODOM_FRAME} <- {m.header.frame_id} yet: {exc}")
+                self.get_logger().warning(f"cannot place cloud yet: {exc}")
                 self._warned_tf = True
             return
         try:
@@ -164,12 +180,25 @@ class SimAdapter(Node):
             return
         if pts.size == 0:
             return
-        r = quat_to_matrix(t.transform.rotation)
-        tr = t.transform.translation
-        world = pts.astype(np.float64) @ r.T + np.array([tr.x, tr.y, tr.z])
+        world = pts.astype(np.float64) @ rot.T + trans
         m.header.frame_id = ODOM_FRAME
         self.cloud_pub.publish(point_cloud2.create_cloud_xyz32(m.header, world.astype(np.float32)))
         self._last_cloud = now
+
+    def _ground_truth_transform(self, sensor_frame: str):
+        """odom <- sensor as (R, t): Gazebo's exact base_link pose composed
+        with the URDF's fixed base_link <- sensor mount."""
+        if self._base_to_sensor is None:
+            t = self.tf.lookup_transform("base_link", sensor_frame, Time())
+            tr = t.transform.translation
+            self._base_to_sensor = (quat_to_matrix(t.transform.rotation),
+                                    np.array([tr.x, tr.y, tr.z]))
+        if self.odom is None or time.monotonic() - self.odom_t > 0.2:
+            raise LookupError("no fresh ground-truth pose")
+        p, q = self.odom.pose.pose.position, self.odom.pose.pose.orientation
+        r_wb, t_wb = quat_to_matrix(q), np.array([p.x, p.y, p.z])
+        r_bs, t_bs = self._base_to_sensor
+        return r_wb @ r_bs, r_wb @ t_bs + t_wb
 
     # ---------------------------------------------------------------- tick
     def _tick(self) -> None:
