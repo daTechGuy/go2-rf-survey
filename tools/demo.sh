@@ -6,7 +6,7 @@
 #   bash tools/demo.sh --length 3.0 --rehearse                # NOTHING MOVES
 #
 # Options: --shape out_and_back|rectangle  --width W (rectangle)
-#          --backend sport|avoid  --name NAME  --no-viz  --no-map
+#          --backend sport|sport_prep|avoid  --name NAME  --no-viz  --no-map
 #
 # Untethered (no laptop cable during the run):
 #   --remote-start  don't start right away: wait (up to --wait S, default 600)
@@ -18,7 +18,8 @@
 #                   the background and survives unplugging. Log, recording and
 #                   floorplan stay in ~/surveys. Later: go2loop.sh demo-log |
 #                   demo-stop | results
-#   Untethered runs stay on --backend sport until the avoid gate has passed.
+#   sport_prep / avoid take the sticks / control from the remote while driving:
+#   pass their zero-motion gate first (docs/autonomous-loop.md).
 #
 # ⚠ Without --rehearse this MOVES THE ROBOT. It refuses unless:
 #   * --i-confirm-breathing (remote L2+A then a SINGLE START, body balancing)
@@ -62,7 +63,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$LENGTH" ] || { echo "--length is required" >&2; usage; }
-case "$BACKEND" in sport|avoid) ;; *) echo "--backend must be sport or avoid" >&2; exit 2 ;; esac
+case "$BACKEND" in sport|sport_prep|avoid) ;; *) echo "--backend must be sport, sport_prep or avoid" >&2; exit 2 ;; esac
 
 STAMP="${DEMO_STAMP:-$(date +%Y%m%d_%H%M%S)}"   # the detached child keeps the parent's
 BAG="${NAME}_${STAMP}"

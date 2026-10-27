@@ -72,7 +72,7 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
   must not acquire dependencies.
 - **Shell flows get the fake robot.** After changing `demo.sh`, `go2loop.sh`
   or `remote_trigger.py`, run `bash tools/fake_robot/run.sh` (Git Bash on the
-  laptop, ~5 min, 19 scenarios): real scripts against fake docker/ROS/remote.
+  laptop, ~5 min, 20 scenarios): real scripts against fake docker/ROS/remote.
   It found a pipefail bug that made a healthy `bridge-up` report failure.
 - **Placeholders are marked loudly.** `config/mount.yaml` and
   `config/MID360_config.json` contain values that are guesses. Never quietly

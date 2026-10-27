@@ -39,6 +39,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
+from std_msgs.msg import String
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from turn_analysis import MOVE, STOP_MOVE, analyse, format_report, passed  # noqa: E402
@@ -66,7 +67,8 @@ class Probe(Node):
         self.odom = self.odom_t = None
         self.sport = self.sport_t = None
         self.cmd, self.api = 0.0, None
-        self.backend_seen = None            # "sport" / "avoid": which path drove it
+        self.backend_seen = None            # "sport" / "avoid" / "sport_prep": which path drove it
+        self.bridge_backend = None          # from the bridge's status heartbeat
         self.create_subscription(Odometry, "/utlidar/robot_odom", self._on_odom,
                                  qos_profile_sensor_data)
         self.create_subscription(SportModeState, "/sportmodestate", self._on_sport,
@@ -76,6 +78,14 @@ class Probe(Node):
         self.create_subscription(Request, "/api/obstacles_avoid/request",
                                  self._on_avoid_request, 50)
         self.pub = self.create_publisher(Twist, "/cmd_vel", 10)
+        # sport and sport_prep both drive with sport Move; only the bridge
+        # knows whether the walk prep ran (before this test started listening).
+        self.create_subscription(String, "/go2_cmd_bridge/status", self._on_bridge, 10)
+
+    def _on_bridge(self, m):
+        for part in m.data.split():
+            if part.startswith("backend="):
+                self.bridge_backend = part.split("=", 1)[1]
 
     def _on_odom(self, m):
         self.odom, self.odom_t = yaw_of(m.pose.pose.orientation), time.monotonic()
@@ -85,9 +95,11 @@ class Probe(Node):
 
     def _on_request(self, m):
         api = int(m.header.identity.api_id)
+        if api not in (MOVE, STOP_MOVE):
+            return            # BalanceStand, sport_prep's SwitchJoystick/FreeWalk: not motion
         self.api = api
         if api == MOVE:
-            self.backend_seen = "sport"
+            self.backend_seen = "sport_prep" if self.bridge_backend == "sport_prep" else "sport"
             try:
                 self.cmd = float(json.loads(m.parameter).get("z", 0.0))
             except (ValueError, TypeError):

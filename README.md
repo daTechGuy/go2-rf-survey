@@ -133,11 +133,11 @@ can be pinned before the hardware exists. `colcon test` picks them up too.
 
 ```bash
 bash tools/fake_robot/run.sh     # Git Bash or Linux; ~5 min
-# fake robot: all 95 checks passed
+# fake robot: all 101 checks passed
 ```
 
 Runs the real on-robot scripts (`demo.sh`, `go2loop.sh`, `remote_trigger.py`,
-`stage_gate.py`) against fake docker, ROS and remote, through 19 scenarios:
+`stage_gate.py`) against fake docker, ROS and remote, through 20 scenarios:
 remote start and abort, unplugged runs, pauses, refusals, failures, and the
 shutdown order. Run it after changing any of them.
 
@@ -322,6 +322,7 @@ there is a working deliverable even if Nav2 tuning stalls.
 | **[field-guide/](docs/field-guide/README.md)** | **Hands-on session guides: unpack → power up → small-room test → classroom demo → pack up.** Start here for a robot session. |
 | [autonomous-loop.md](docs/autonomous-loop.md) | The autonomous route: safety layers, staged rollout (Stage 0–3), untethered runs |
 | [live-view.md](docs/live-view.md) | Foxglove on the laptop: live map, trail, loop status |
+| [related-work.md](docs/related-work.md) | Similar projects, what we took from them (go2-nav2-wifi walk prep), Go2 security research |
 | [motion-test.md](docs/motion-test.md) | First motion via the vendor SDK (bounded 3-step walk) |
 | [bringup-log-2026-10-20.md](docs/bringup-log-2026-10-20.md) | What was found and fixed on the robot; laptop internet sharing |
 | [RUNBOOK.md](docs/RUNBOOK.md) | What to type, in order, to get a WiFi heatmap (the end goal) |

@@ -336,6 +336,23 @@ if scenario 19 "record-start / record-stop"; then
   showif "$f0"
 fi
 
+if scenario 20 "backend sport_prep: own stage gate, bridge gets the backend"; then
+  echo "== $CUR"; fresh 20; f0=$FAILS
+  stage1    # a pass on plain sport says nothing about sport_prep
+  demo --length 1.0 --i-confirm-breathing --backend sport_prep --remote-start --detach
+  check "refused: Stage 1 was on sport"   has "$FAKE/parent.out" "backend 'sport', not 'sport_prep'"
+  python -c "import json,time; print(json.dumps({'epoch': time.time(), 'backend': 'sport_prep'}))" \
+    > "$HOME/surveys/.stage1_pass"
+  demo --length 1.0 --i-confirm-breathing --backend sport_prep --name prep --remote-start --detach
+  check "allowed with a sport_prep pass"  has "$FAKE/parent.out" 'SAFE TO UNPLUG'
+  check "bridge told backend sport_prep"  has "$(dlog)" 'bridge \(backend sport_prep\)'
+  hold $START 2.2
+  check "demo finishes"                   wait_demo 40
+  check "finished: done"                  has "$(dlog)" 'demo finished: done'
+  check "Stage 2 recorded for sport_prep" has "$HOME/surveys/.stage2_pass" '"sport_prep"'
+  showif "$f0"
+fi
+
 pkill -f remote_trigger.py 2>/dev/null
 export HOME="$REAL_HOME"
 rm -rf "$WORK"

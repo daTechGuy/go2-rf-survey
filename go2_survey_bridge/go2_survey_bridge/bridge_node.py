@@ -68,7 +68,9 @@ class CmdVelBridge(Node):
         self.declare_parameter("deadband_yaw", 0.03)
         # "sport" (default): sport-mode Move. "avoid": Unitree's
         # obstacle-avoidance Move, which takes control from the handheld
-        # remote while driving -- see motion_backend.py before using it.
+        # remote while driving. "sport_prep": sport Move after
+        # SwitchJoystick(false) + FreeWalk, which switches the remote's
+        # sticks off while driving. See motion_backend.py before using either.
         self.declare_parameter("backend", "sport")
 
         g = self.get_parameter
@@ -126,14 +128,21 @@ class CmdVelBridge(Node):
 
         rate = max(1.0, g("publish_rate_hz").value)
         self.create_timer(1.0 / rate, self._tick)
+        # Heartbeat, so a late subscriber (turn_test) learns the backend.
+        self._state = "starting"
+        self.create_timer(1.0, lambda: self._publish_status(self._state))
 
         if g("auto_balance_stand").value:
             # One-shot, slightly delayed: the publisher needs a moment to
             # match with the subscriber or the first request is dropped.
             self._startup_timer = self.create_timer(1.0, self._startup)
 
-        target = sport_api.SPORT_REQUEST_TOPIC if self.backend.name == "sport" \
-            else f"/api/{AVOID}/request (obstacle-avoidance Move; takes over from the remote while driving)"
+        target = {
+            "sport": sport_api.SPORT_REQUEST_TOPIC,
+            "sport_prep": f"{sport_api.SPORT_REQUEST_TOPIC} after SwitchJoystick(false) + "
+                          "FreeWalk (remote sticks off while driving)",
+        }.get(self.backend.name,
+              f"/api/{AVOID}/request (obstacle-avoidance Move; takes over from the remote while driving)")
         self.get_logger().info(
             f"bridge up: {g('cmd_vel_topic').value} -> "
             f"{target} at {rate:.0f} Hz, backend={self.backend.name}\n"
@@ -170,6 +179,18 @@ class CmdVelBridge(Node):
         self._startup_timer.cancel()
         self.get_logger().info("sending BalanceStand (Move is ignored without it)")
         self._send(sport_api.BALANCE_STAND)
+        if getattr(self.backend, "claim_on_start", False):
+            # go2-nav2-wifi pauses ~0.3 s between these; give the stand time.
+            self._prep_timer = self.create_timer(0.5, self._prep)
+
+    def _prep(self) -> None:
+        self._prep_timer.cancel()
+        if self._estop:
+            return
+        self.get_logger().info(
+            "walk prep: SwitchJoystick(false) + FreeWalk -- remote sticks ignored "
+            "until the bridge releases (watchdog / e-stop / damp / shutdown)")
+        self._emit(self.backend.claim())
 
     # -------------------------------------------------------------- control
 
@@ -222,13 +243,15 @@ class CmdVelBridge(Node):
         self._emit(self.backend.move(out.vx, out.vy, out.vyaw))
 
     def _publish_status(self, state: str) -> None:
+        self._state = state
         v = self.limiter.current
         self.status_pub.publish(
             String(
                 data=(
                     f"state={state} vx={v.vx:.3f} vy={v.vy:.3f} "
                     f"vyaw={v.vyaw:.3f} estop={self._estop} "
-                    f"watchdog_trips={self.watchdog.trip_count}"
+                    f"watchdog_trips={self.watchdog.trip_count} "
+                    f"backend={self.backend.name}"
                 )
             )
         )

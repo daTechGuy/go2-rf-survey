@@ -214,8 +214,45 @@ turn won't wrap it.
    bash tools/go2loop.sh bridge-down
    ```
 
-**FAIL:** stop here. Copy the whole report into the record sheet and go to N–O.
-(The software won't allow any walking today without a PASS anyway.)
+**PASS:** go on to K.
+
+**FAIL:** copy the whole report into the record sheet, then try J2 once. If
+J2 isn't possible or also fails, go to N–O. (The software won't allow any
+walking today without a PASS anyway.)
+
+## J2. Only if J failed: the turn test with "walk prep"
+
+Another Go2 project found that, after the remote has been used, the robot
+needs two extra commands before it follows software turns properly. Without
+them it "jerks", which matches what ours did. The catch: those commands
+switch the remote's **sticks** off while the software drives. So first prove,
+with nothing moving, that your hard stop still works.
+
+1. [ ] Robot standing and breathing (I2–I3). Everyone 1.5 m back.
+2. [ ] Switch the sticks off. It's a setting, and nothing moves:
+   ```bash
+   bash tools/go2loop.sh joystick hold
+   ```
+3. [ ] Push a stick gently. The robot should **not** walk. Then, in a
+   second SSH window (`ssh go2`, `cd ~/go2-rf-survey`), run
+   `bash tools/go2loop.sh remote-keys` and press SELECT + UP: it must still
+   print `SELECT+UP` (the remote start depends on it). Ctrl-C.
+4. [ ] **Press L2 + START.** It must sink down (damp) as usual. **Write down
+   yes/no.**
+5. [ ] Always, whatever happened:
+   ```bash
+   bash tools/go2loop.sh joystick release
+   ```
+   Stand it up again (L2 + A, single START) and check that the sticks walk it.
+6. [ ] **Only if step 4 was yes:** repeat J3–J6 with the new option:
+   ```bash
+   bash tools/go2loop.sh bridge-up -p backend:=sport_prep
+   bash tools/go2loop.sh turn-test --i-confirm-breathing
+   bash tools/go2loop.sh bridge-down
+   ```
+   **PASS:** in steps L and M, add `--backend sport_prep` to every `demo.sh`
+   command. While those walks run, the sticks are off: the stop is
+   **L2 + START** or **SELECT + DOWN**.
 
 ## K. Rehearse the untethered run: nothing moves
 
@@ -358,6 +395,8 @@ G  remote-keys:   SELECT+UP -> ______   SELECT+DOWN -> ______
                   robot reacted to SELECT+UP/DOWN? yes / no
 I5 mode:          name=______
 J  turn-test:     PASS / FAIL   (paste the report)
+J2 sticks held:   stick walked it? yes / no   L2+START damped? yes / no
+   turn-test sport_prep: PASS / FAIL / not run
 K  rehearsal:     results line: ______   abort: ______   stick: ______
 L  1 m walk:      results line: ______
                   what it did (turned which way, stopped where):

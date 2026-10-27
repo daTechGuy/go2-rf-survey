@@ -22,6 +22,9 @@
 #                                      Unitree's built-in obstacle avoidance;
 #                                      hold/release = API takes/returns control
 #                                      from the remote (no motion)
+#   bash tools/go2loop.sh joystick hold|release
+#                                      remote sticks off / on (SwitchJoystick);
+#                                      the gate for bridge backend sport_prep
 #   bash tools/go2loop.sh viz-up       live view: foxglove_bridge + live map;
 #                                      connect Foxglove to ws://192.168.123.18:8765
 #   bash tools/go2loop.sh viz-reset    clear the live map and trail
@@ -116,6 +119,10 @@ case "${1:-}" in
     ;;
   avoid)
     IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" python3 /workspace/tools/go2_avoid.py "${2:-get}" \
+      2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
+    ;;
+  joystick)
+    IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" python3 /workspace/tools/go2_joystick.py "${2:-}" \
       2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
     ;;
   viz-up)

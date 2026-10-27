@@ -207,6 +207,45 @@ bash tools/go2loop.sh turn-test --i-confirm-breathing
 bash tools/go2loop.sh bridge-down          # zeroes and hands back to the remote
 ```
 
+## Optional: walk prep (`backend:=sport_prep`)
+
+**Try this if Stage 1 fails again on the default `sport` backend** with the
+robot confirmed breathing and in mode `normal`.
+
+`sport_prep` drives with the same sport Move, but first sends the walk
+preparation used by [dancher00/go2-nav2-wifi](https://github.com/dancher00/go2-nav2-wifi)
+(MIT): **`SwitchJoystick(false)` + `FreeWalk`**. Their note says this is
+*"required after RC use"*, and their troubleshooting says *"If hz>0 but robot
+jerks: … (FreeWalk + SwitchJoystick)"*. That is our first Stage 1
+result: commands arriving, motion wrong. See [related-work.md](related-work.md).
+
+**The catch:** `SwitchJoystick(false)` makes the robot **ignore the remote's
+sticks**. The bridge sends it ~1.5 s after starting, and hands the sticks back
+(`SwitchJoystick(true)`) on watchdog, e-stop, damp and shutdown. Whether
+**L2 + START** still damps while the sticks are off isn't documented.
+
+### Gate — must pass before sport_prep moves the robot (no motion)
+
+1. Robot standing, open floor, you on the remote.
+2. `bash tools/go2loop.sh joystick hold`. The sticks are now off. Nothing moves.
+3. Push a stick gently: the robot should **not** walk.
+4. In a second shell, `bash tools/go2loop.sh remote-keys`: buttons and sticks
+   must **still be reported** (the remote start/abort depends on it). Ctrl-C.
+5. **Press L2 + START.** Pass: the robot damps as it normally would.
+6. `bash tools/go2loop.sh joystick release`: always, pass or fail. Check
+   that the sticks walk it again.
+
+If L2 + START doesn't work while held, **don't use `sport_prep`**.
+
+If it passes, Stage 1 on this path (the PASS is recorded as `sport_prep`,
+separate from `sport`):
+```bash
+bash tools/go2loop.sh bridge-up -p backend:=sport_prep
+bash tools/go2loop.sh turn-test --i-confirm-breathing
+bash tools/go2loop.sh bridge-down          # StopMove + sticks back on
+```
+Later stages then use `bash tools/demo.sh ... --backend sport_prep`.
+
 ## Stage 2 — live, 1 m out-and-back, open floor
 
 Smallest possible real route. Clear ~1.5 m around it. You on the remote.

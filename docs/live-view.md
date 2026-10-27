@@ -54,6 +54,22 @@ several MB/s, so the live map republishes at a coarser 8 cm voxel every 2 s
 and the live scan is thinned to every 4th point at 5 Hz. Subscribing the
 raw cloud in Foxglove works but is heavy — prefer `/go2/scan_lite`.
 
+## Without the cable (WiFi)
+
+Not set up yet. The robot's Jetson has no WiFi of its own (only `eth0` was
+found). With a USB WiFi adapter on the Jetson (MT7612U: see
+[HARDWARE.md](HARDWARE.md); the 5.10 kernel rules most others out) joined to the
+same network as the laptop, **nothing else changes**: `foxglove_bridge`
+already listens on every interface, so Foxglove connects to
+`ws://<robot-wifi-ip>:8765`.
+
+No DDS relay is needed for this. [dancher00/go2-nav2-wifi](https://github.com/dancher00/go2-nav2-wifi)
+does relay the robot's topics onto a separate WiFi DDS domain (64), never
+touching the onboard domain 0, but only because their RViz and Nav2 run on the
+laptop. Keep the heavy work on the robot and send only the thinned map, as
+`live_map.py` does: one of their logs shows ~0.9 Mbit/s of Jetson WiFi
+traffic. Notes: [related-work.md](related-work.md).
+
 ## For the classroom demo
 
 `viz-reset` just before the robot starts, then the audience watches the room
