@@ -49,8 +49,32 @@ def main() -> int:
         if f is None:
             st["rows"].append((None, None, None, len(pts)))
             return
-        fr, nr = classify(pts, st["pose"], f, ObstacleParams())
+        prm = ObstacleParams()
+        fr, nr = classify(pts, st["pose"], f, prm)
         st["rows"].append((f, fr, nr, len(pts)))
+        if fr or nr:
+            # where are they, in the robot's own frame? (x fwd, y left, h above floor)
+            pz = st["pose"]
+            c, s = math.cos(pz.yaw), math.sin(pz.yaw)
+            hits = []
+            for x, y, z in pts:
+                h = z - f
+                if h < prm.z_min or h > prm.z_max:
+                    continue
+                xr = c * (x - pz.x) + s * (y - pz.y)
+                yr = -s * (x - pz.x) + c * (y - pz.y)
+                if -prm.body_rear <= xr <= prm.body_front and abs(yr) <= prm.body_half_width:
+                    continue
+                in_front = prm.body_front < xr <= prm.body_front + prm.stop_distance \
+                    and abs(yr) <= prm.lane_half_width
+                if in_front or xr * xr + yr * yr <= prm.clearance_radius ** 2:
+                    hits.append((xr, yr, h))
+            if hits:
+                a = np.array(hits)
+                st.setdefault("hits", []).append(a)
+                print(f"  front={fr} near={nr}: x {a[:, 0].min():+.2f}..{a[:, 0].max():+.2f}  "
+                      f"y {a[:, 1].min():+.2f}..{a[:, 1].max():+.2f}  "
+                      f"h {a[:, 2].min():.2f}..{a[:, 2].max():.2f} m", flush=True)
 
     n.create_subscription(Odometry, "/utlidar/robot_odom", on_odom, qos_profile_sensor_data)
     n.create_subscription(PointCloud2, "/utlidar/cloud_deskewed", on_cloud, qos_profile_sensor_data)
