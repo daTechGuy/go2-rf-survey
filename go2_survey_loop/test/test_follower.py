@@ -230,6 +230,86 @@ class TestOutAndBackLoop(unittest.TestCase):
         self.assertGreater(total, 0)
 
 
+class TestRouteLine(unittest.TestCase):
+    """Steering along the route line, not at the corner (FollowerParams.lookahead)."""
+
+    def test_aim_point_on_the_line_ahead(self):
+        from go2_survey_loop.follower import aim_point
+        ax, ay = aim_point((0, 0), (3, 0), Pose2D(1.0, 0.3, 0), 0.6)
+        self.assertAlmostEqual(ax, 1.6)
+        self.assertAlmostEqual(ay, 0.0)                 # on the line, not at the robot's y
+
+    def test_aim_point_never_past_the_corner(self):
+        from go2_survey_loop.follower import aim_point
+        self.assertEqual(aim_point((0, 0), (3, 0), Pose2D(2.8, 0.1, 0), 0.6), (3, 0))
+        self.assertEqual(aim_point((0, 0), (3, 0), Pose2D(4.0, 0.0, 0), 0.6), (3, 0))
+
+    def test_aim_point_degenerate_cases(self):
+        from go2_survey_loop.follower import aim_point
+        self.assertEqual(aim_point(None, (3, 0), Pose2D(1, 1, 0), 0.6), (3, 0))
+        self.assertEqual(aim_point((0, 0), (3, 0), Pose2D(1, 1, 0), 0.0), (3, 0))
+        self.assertEqual(aim_point((3, 0), (3, 0), Pose2D(1, 1, 0), 0.6), (3, 0))
+
+    def test_offset_robot_steers_back_harder_than_corner_aiming(self):
+        pose = Pose2D(1.0, 0.15, 0.0)                    # 15 cm left of the line
+        _, line_yaw, _, _ = compute_command(pose, (3, 0), FP, False, origin=(0, 0))
+        _, corner_yaw, _, _ = compute_command(pose, (3, 0), FP, False)
+        self.assertLess(line_yaw, 0)                     # turns right, back to the line
+        self.assertLess(line_yaw, corner_yaw)            # and harder than aiming at the corner
+
+    def test_on_the_line_drives_straight(self):
+        vx, vyaw, _, _ = compute_command(Pose2D(1.0, 0.0, 0.0), (3, 0), FP, False, origin=(0, 0))
+        self.assertGreater(vx, 0)
+        self.assertAlmostEqual(vyaw, 0.0)
+
+    def _return_leg(self, lookahead, shift=0.13, creep=0.0):
+        """Out-and-back 3 m with what the Gazebo Go2 did: a sideways shift
+        while turning on the spot (and optionally a slow sideways creep while
+        walking). Returns (completed, {x: |y|} along the return leg)."""
+        fp = FollowerParams(lookahead=lookahead)
+        wps = to_world(Pose2D(0, 0, 0), out_and_back_local(3.0))
+        m = Mission(wps, Pose2D(0, 0, 0), 0.0, fp, SafetyParams())
+        pose, t, turned, prof = Pose2D(0, 0, 0), 0.0, 0.0, {}
+        for _ in range(3000):
+            cmd = m.step(t, pose, FRESH, FRESH, 0, 0)
+            if cmd.state in (State.DONE, State.ABORTED):
+                return cmd.state == State.DONE, prof
+            if cmd.publish and cmd.state == State.RUNNING:
+                yaw = pose.yaw + cmd.vyaw * DT
+                lat = creep * DT if cmd.vx > 0 else 0.0
+                if cmd.vx == 0 and abs(cmd.vyaw) > 0 and turned < shift:
+                    lat, turned = shift / 20, turned + shift / 20   # shoved sideways mid-turn
+                pose = Pose2D(pose.x + cmd.vx * DT * math.cos(yaw) - lat * math.sin(yaw),
+                              pose.y + cmd.vx * DT * math.sin(yaw) + lat * math.cos(yaw), yaw)
+            if m.index >= 1 and turned >= shift:
+                for xs in (2.0, 1.5, 1.0):
+                    if xs not in prof and pose.x <= xs:
+                        prof[xs] = abs(pose.y)
+            t += DT
+        return False, prof
+
+    def test_turn_shift_is_pulled_back_to_the_centre(self):
+        done, prof = self._return_leg(lookahead=0.6)
+        self.assertTrue(done)
+        # a metre into the return leg it is back near the centre line
+        self.assertLess(prof[2.0], 0.04)
+        self.assertLess(prof[1.5], 0.02)
+
+    def test_corner_aiming_keeps_the_shift(self):
+        # the model reproduces the Gazebo failure without the fix: aiming at
+        # the corner only shrinks the offset in proportion to distance left
+        _, old = self._return_leg(lookahead=0.0)
+        _, new = self._return_leg(lookahead=0.6)
+        self.assertGreater(old[2.0], 0.04)        # still ~5 cm off a metre in
+        self.assertLess(new[2.0], old[2.0] / 4)   # line-following: well under 1 cm
+
+    def test_steady_creep_stays_bounded(self):
+        # a constant sideways creep leaves a steady offset ~ creep * lookahead / speed
+        done, prof = self._return_leg(lookahead=0.6, creep=0.03)
+        self.assertTrue(done)
+        self.assertLess(max(prof.values()), 0.10)
+
+
 class TestPauses(unittest.TestCase):
     def test_obstacle_pauses_and_holds_zero(self):
         m = new_mission()

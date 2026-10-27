@@ -5,6 +5,14 @@ corner if it is well off the nose, otherwise drive at it with a heading
 correction, slowing as it closes. Hysteresis between the "turn" and "drive"
 thresholds stops it chattering between the two near the boundary.
 
+It steers at a point ``lookahead`` metres along the *route line* (previous
+corner -> next corner) ahead of the robot, not at the corner itself. Aiming
+at the corner leaves any sideways offset uncorrected: in the Gazebo test a
+turn on the spot shifted the robot 12-14 cm sideways and it walked the whole
+return leg off-centre, into the desks' clearance ring. Aiming along the line
+pulls it back to the centre within about a metre. ``lookahead=0`` restores
+plain corner-aiming.
+
 ``Mission`` owns everything that decides *whether* to move, in order of
 precedence:
 
@@ -45,6 +53,7 @@ class FollowerParams:
     reach_tol: float = 0.20     # m
     turn_enter: float = 0.35    # rad (~20 deg): start turning in place
     turn_exit: float = 0.12     # rad (~7 deg): resume driving
+    lookahead: float = 0.6      # m along the route line; 0 = aim at the corner
 
 
 @dataclass(frozen=True)
@@ -81,17 +90,38 @@ def _clamp(v: float, limit: float) -> float:
     return max(-limit, min(limit, v))
 
 
-def compute_command(pose: Pose2D, target, p: FollowerParams, turning: bool):
+def aim_point(origin, target, pose: Pose2D, lookahead: float):
+    """The point to steer at: ``lookahead`` metres along the line origin ->
+    target beyond the robot's projection onto it, never past the target.
+    With no origin, no lookahead, or a zero-length segment: the target."""
+    if origin is None or lookahead <= 0:
+        return target
+    ax, ay = origin
+    bx, by = target
+    sx, sy = bx - ax, by - ay
+    seg = math.hypot(sx, sy)
+    if seg < 1e-6:
+        return target
+    along = ((pose.x - ax) * sx + (pose.y - ay) * sy) / seg
+    s = max(0.0, along) + lookahead
+    if s >= seg:
+        return target
+    return ax + sx * s / seg, ay + sy * s / seg
+
+
+def compute_command(pose: Pose2D, target, p: FollowerParams, turning: bool, origin=None):
     """Steering law. Returns (vx, vyaw, turning, distance_to_target).
 
+    ``origin`` is the previous corner; with it the robot steers along the
+    route line (see aim_point), and still slows and stops on ``target``.
     A non-finite pose or target commands nothing. That is checked explicitly
     rather than left to how NaN happens to propagate through min/max.
     """
     if not all(math.isfinite(v) for v in (pose.x, pose.y, pose.yaw, target[0], target[1])):
         return 0.0, 0.0, False, math.inf
-    dx, dy = target[0] - pose.x, target[1] - pose.y
-    dist = math.hypot(dx, dy)
-    err = wrap_angle(math.atan2(dy, dx) - pose.yaw)
+    dist = math.hypot(target[0] - pose.x, target[1] - pose.y)
+    ax, ay = aim_point(origin, target, pose, p.lookahead)
+    err = wrap_angle(math.atan2(ay - pose.y, ax - pose.x) - pose.yaw)
 
     turning = abs(err) > (p.turn_exit if turning else p.turn_enter)
     vyaw = _clamp(p.k_yaw * err, p.max_vyaw)
@@ -129,6 +159,12 @@ class Mission:
     @property
     def target(self):
         return self.waypoints[min(self.index, len(self.waypoints) - 1)]
+
+    @property
+    def origin(self):
+        """Start of the current route line: the previous corner, or the start."""
+        i = min(self.index, len(self.waypoints) - 1)
+        return self.waypoints[i - 1] if i > 0 else (self.start.x, self.start.y)
 
     def progress(self) -> str:
         return f"waypoint {min(self.index + 1, len(self.waypoints))}/{len(self.waypoints)}"
@@ -169,7 +205,7 @@ class Mission:
         if self._turn_dir == 0.0:
             self._turn_dir = math.copysign(1.0, vyaw) if vyaw else 0.0
             return vyaw
-        tx, ty = self.target
+        tx, ty = aim_point(self.origin, self.target, pose, self.follow.lookahead)
         err = wrap_angle(math.atan2(ty - pose.y, tx - pose.x) - pose.yaw)
         if abs(err) > math.pi - self.follow.turn_enter \
                 and math.copysign(1.0, vyaw) != self._turn_dir:
@@ -246,7 +282,7 @@ class Mission:
 
         # 4. run
         vx, vyaw, self._turning, dist = compute_command(
-            pose, self.target, self.follow, self._turning)
+            pose, self.target, self.follow, self._turning, self.origin)
         while dist < self.follow.reach_tol:
             self.index += 1
             self._turning = False
@@ -254,7 +290,7 @@ class Mission:
             if self.index >= len(self.waypoints):
                 return self._end(State.DONE, "loop complete", now)
             vx, vyaw, self._turning, dist = compute_command(
-                pose, self.target, self.follow, self._turning)
+                pose, self.target, self.follow, self._turning, self.origin)
 
         vyaw = self._latch_turn(pose, vyaw)
         self.reason = self.progress()
