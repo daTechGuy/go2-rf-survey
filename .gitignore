@@ -53,3 +53,6 @@ secrets.yaml
 Thumbs.db
 desktop.ini
 Desktop.ini
+
+# sim install logs
+sim/*.log

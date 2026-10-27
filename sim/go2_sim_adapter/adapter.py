@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""Make the Gazebo Go2 look like the real one to our code.
+
+    source /opt/ros/humble/setup.bash && source ~/go2_sim_ws/install/setup.bash
+    python3 sim/go2_sim_adapter/adapter.py --ros-args -p sim_odom_topic:=/odom
+
+Real robot interface (what our code uses)      <- from the sim
+  /api/sport/request -> /api/sport/response     robot_model.py; Move -> sim_cmd_topic
+  /api/obstacles_avoid/request|response         robot_model.py
+  /api/motion_switcher/request|response         CheckMode -> "normal"
+  /utlidar/robot_odom   (frame odom)            sim_odom_topic, re-framed
+  /utlidar/cloud_deskewed (frame odom, 15 Hz)   sim_cloud_topic, moved into odom via TF
+  /sportmodestate                               robot_model + odometry
+  /wirelesscontroller   (read: L2+START damps)  published by fake_remote.py
+
+The sim's controller (CHAMP) must listen on ``sim_cmd_topic`` (default
+/sim/cmd_vel), NOT /cmd_vel: /cmd_vel is our loop -> bridge link, and the
+sim must only move through the bridge's sport requests, as the robot does.
+"""
+
+from __future__ import annotations
+
+import math
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import rclpy
+from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from rclpy.time import Time
+from sensor_msgs.msg import PointCloud2
+from sensor_msgs_py import point_cloud2
+from tf2_ros import Buffer, TransformException, TransformListener
+
+from unitree_api.msg import Request, Response
+from unitree_go.msg import SportModeState, WirelessController
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from robot_model import RobotModel  # noqa: E402
+
+ODOM_FRAME = "odom"
+
+
+def quat_to_matrix(q) -> np.ndarray:
+    x, y, z, w = q.x, q.y, q.z, q.w
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ])
+
+
+def yaw_of(q) -> float:
+    return math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+
+
+class SimAdapter(Node):
+    def __init__(self) -> None:
+        super().__init__("go2_sim_adapter")
+        d = self.declare_parameter
+        d("sim_cmd_topic", "/sim/cmd_vel")
+        d("sim_odom_topic", "/odom")
+        d("sim_cloud_topic", "/velodyne_points")
+        d("cloud_rate_hz", 15.0)
+        d("move_timeout_s", 0.0)
+        g = lambda n: self.get_parameter(n).value  # noqa: E731
+
+        self.model = RobotModel(move_timeout_s=float(g("move_timeout_s")))
+        self.tf = Buffer()
+        self.tf_listener = TransformListener(self.tf, self)
+        self.odom: Odometry | None = None
+        self._cloud_period = 1.0 / max(1.0, g("cloud_rate_hz"))
+        self._last_cloud = 0.0
+        self._warned_tf = False
+
+        self.cmd_pub = self.create_publisher(Twist, g("sim_cmd_topic"), 10)
+        self.odom_pub = self.create_publisher(Odometry, "/utlidar/robot_odom", qos_profile_sensor_data)
+        self.cloud_pub = self.create_publisher(PointCloud2, "/utlidar/cloud_deskewed", qos_profile_sensor_data)
+        self.state_pub = self.create_publisher(SportModeState, "/sportmodestate", qos_profile_sensor_data)
+
+        self.services = {}
+        for name, handler in (("sport", self.model.sport),
+                              ("obstacles_avoid", self.model.avoid),
+                              ("motion_switcher", self.model.motion_switcher)):
+            pub = self.create_publisher(Response, f"/api/{name}/response", 10)
+            self.create_subscription(Request, f"/api/{name}/request",
+                                     lambda m, h=handler, p=pub, n=name: self._on_request(m, h, p, n), 10)
+
+        self.create_subscription(Odometry, g("sim_odom_topic"), self._on_odom, qos_profile_sensor_data)
+        self.create_subscription(PointCloud2, g("sim_cloud_topic"), self._on_cloud, qos_profile_sensor_data)
+        self.create_subscription(WirelessController, "/wirelesscontroller", self._on_remote,
+                                 qos_profile_sensor_data)
+        self.create_timer(0.02, self._tick)          # 50 Hz command + sport state
+        self.get_logger().info(
+            f"sim adapter up: sport/avoid/motion_switcher -> {g('sim_cmd_topic')}; "
+            f"{g('sim_odom_topic')} -> /utlidar/robot_odom; "
+            f"{g('sim_cloud_topic')} -> /utlidar/cloud_deskewed (odom frame)")
+
+    # ------------------------------------------------------------ requests
+    def _on_request(self, msg: Request, handler, pub, name: str) -> None:
+        api = int(msg.header.identity.api_id)
+        code, data = handler(api, msg.parameter, time.monotonic())
+        for line in self.model.log:
+            self.get_logger().info(line)
+        self.model.log.clear()
+        if msg.header.policy.noreply:
+            return
+        r = Response()
+        r.header.identity.id = msg.header.identity.id
+        r.header.identity.api_id = api
+        r.header.status.code = int(code)
+        r.data = data
+        pub.publish(r)
+
+    def _on_remote(self, m: WirelessController) -> None:
+        self.model.remote(int(m.keys), m.lx, m.ly, m.rx, m.ry)
+        for line in self.model.log:
+            self.get_logger().warning(line)
+        self.model.log.clear()
+
+    # -------------------------------------------------------------- sensors
+    def _on_odom(self, m: Odometry) -> None:
+        self.odom = m
+        out = Odometry()
+        out.header.stamp = m.header.stamp
+        out.header.frame_id = ODOM_FRAME
+        out.child_frame_id = "base_link"
+        out.pose = m.pose
+        out.twist = m.twist
+        self.odom_pub.publish(out)
+
+    def _on_cloud(self, m: PointCloud2) -> None:
+        now = time.monotonic()
+        if now - self._last_cloud < self._cloud_period:
+            return
+        try:
+            t = self.tf.lookup_transform(ODOM_FRAME, m.header.frame_id, Time())
+        except TransformException as exc:
+            if not self._warned_tf:
+                self.get_logger().warning(f"no TF {ODOM_FRAME} <- {m.header.frame_id} yet: {exc}")
+                self._warned_tf = True
+            return
+        pts = point_cloud2.read_points_numpy(m, field_names=("x", "y", "z"), skip_nans=True)
+        if pts.size == 0:
+            return
+        r = quat_to_matrix(t.transform.rotation)
+        tr = t.transform.translation
+        world = pts.astype(np.float64) @ r.T + np.array([tr.x, tr.y, tr.z])
+        m.header.frame_id = ODOM_FRAME
+        self.cloud_pub.publish(point_cloud2.create_cloud_xyz32(m.header, world.astype(np.float32)))
+        self._last_cloud = now
+
+    # ---------------------------------------------------------------- tick
+    def _tick(self) -> None:
+        now = time.monotonic()
+        vx, vy, wz = self.model.command(now)
+        tw = Twist()
+        tw.linear.x, tw.linear.y, tw.angular.z = float(vx), float(vy), float(wz)
+        self.cmd_pub.publish(tw)
+
+        s = SportModeState()
+        s.mode = self.model.mode(now)
+        s.gait_type = 1 if s.mode == 3 else 0
+        s.error_code = 0
+        if self.odom is not None:
+            p, q, v = self.odom.pose.pose.position, self.odom.pose.pose.orientation, self.odom.twist.twist
+            s.position = [float(p.x), float(p.y), float(p.z)]
+            s.velocity = [float(v.linear.x), float(v.linear.y), float(v.linear.z)]
+            s.yaw_speed = float(v.angular.z)
+            s.imu_state.rpy = [0.0, 0.0, float(yaw_of(q))]
+            s.imu_state.quaternion = [float(q.w), float(q.x), float(q.y), float(q.z)]
+            s.body_height = float(self.model.body_height(p.z))
+        else:
+            s.body_height = float(self.model.body_height())
+        self.state_pub.publish(s)
+
+
+def main() -> None:
+    rclpy.init()
+    node = SimAdapter()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    main()

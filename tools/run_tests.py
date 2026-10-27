@@ -33,6 +33,7 @@ SUITES = [
     "go2_survey_loop/test/test_obstacles.py",
     "go2_survey_loop/test/test_follower.py",
     "go2_survey_loop/test/test_footprint.py",
+    "sim/tests/test_robot_model.py",
 ]
 
 # ANSI is fine on modern Windows terminals, but not when piped to a file.
