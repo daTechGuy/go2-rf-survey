@@ -70,6 +70,11 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
   Python. Keep it that way — if new logic can be made testable, make it.
 - **Tests before hardware.** `python tools/run_tests.py` must stay green and
   must not acquire dependencies.
+- **The Gazebo sim** (`sim/`, WSL Ubuntu on the laptop, user `rofessor`) runs our
+  real image and scripts against a simulated Go2; see `sim/README.md`. Drive WSL
+  from Git Bash (`MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-22.04 -- bash <script>`);
+  PowerShell mangles nested quotes. WSL clone: `~/go2-rf-survey` (pull from the
+  Windows repo).
 - **Shell flows get the fake robot.** After changing `demo.sh`, `go2loop.sh`
   or `remote_trigger.py`, run `bash tools/fake_robot/run.sh` (Git Bash on the
   laptop, ~5 min, 20 scenarios): real scripts against fake docker/ROS/remote.
