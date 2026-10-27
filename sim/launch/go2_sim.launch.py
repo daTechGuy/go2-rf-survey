@@ -23,6 +23,7 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument("world", default_value=os.path.join(cfg, "worlds/default.world")),
         DeclareLaunchArgument("gui", default_value="false"),
+        DeclareLaunchArgument("headless", default_value="True"),   # champ_gazebo: no gzclient
         DeclareLaunchArgument("bringup", description="patched champ bringup.launch.py"),
         DeclareLaunchArgument("description",
                               default_value=os.path.join(desc, "xacro/robot_VLP.xacro")),
@@ -46,7 +47,7 @@ def generate_launch_description():
             get_package_share_directory("champ_gazebo"), "launch", "gazebo.launch.py")),
         launch_arguments={
             "use_sim_time": "true", "robot_name": "go2", "world": L("world"),
-            "lite": "false", "gui": L("gui"), "close_loop_odom": "true",
+            "lite": "false", "gui": L("gui"), "headless": L("headless"), "close_loop_odom": "true",
             # spawn at the origin facing +x: the tape on the floor
             "world_init_x": "0.0", "world_init_y": "0.0", "world_init_z": "0.275",
             "world_init_heading": "0.0",

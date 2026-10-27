@@ -23,6 +23,9 @@ ros_env() {
   source "$HOME/unitree_msgs_ws/install/setup.bash"
   set -u
   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
+  # Gazebo's own transport: keep it on loopback (under WSL it can advertise an
+  # address its sensor plugins then cannot reach).
+  export GAZEBO_IP=127.0.0.1 GAZEBO_MASTER_URI=http://127.0.0.1:11345
   # identical to docker/run.sh, so the container and the sim discover each other
   export CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"${IFACE}\" priority=\"default\" multicast=\"default\"/></Interfaces></General></Domain></CycloneDDS>"
 }
@@ -61,7 +64,7 @@ case "${1:-}" in
     done
     grep -q "$vlp" "$robot" || { echo "could not point $robot at the patched LiDAR" >&2; exit 1; }
     : > "$PIDS"
-    setsid ros2 launch "$SIM/launch/go2_sim.launch.py" world:="$wfile" gui:="$gui" bringup:="$patched" \
+    setsid ros2 launch "$SIM/launch/go2_sim.launch.py" world:="$wfile" gui:="$gui" headless:="$([ "$gui" = true ] && echo False || echo True)" bringup:="$patched" \
       description:="$robot" > "$LOGS/sim_gazebo.log" 2>&1 & echo $! >> "$PIDS"
     setsid python3 -u "$SIM/go2_sim_adapter/adapter.py" > "$LOGS/sim_adapter.log" 2>&1 & echo $! >> "$PIDS"
     setsid python3 -u "$SIM/go2_sim_adapter/fake_remote.py" serve > "$LOGS/sim_remote.log" 2>&1 & echo $! >> "$PIDS"
