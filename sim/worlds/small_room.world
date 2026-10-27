@@ -16,21 +16,21 @@
           <material><ambient>0.6 0.6 0.6 1</ambient><diffuse>0.6 0.6 0.6 1</diffuse></material></visual>
       </link></model>
     <model name="wall_left"><static>true</static>
-      <pose>1.000 1.300 1.250 0 0 0</pose>
+      <pose>0.750 1.300 1.250 0 0 0</pose>
       <link name="link">
-        <collision name="c"><geometry><box><size>3.000 0.100 2.500</size></box></geometry></collision>
-        <visual name="v"><geometry><box><size>3.000 0.100 2.500</size></box></geometry>
+        <collision name="c"><geometry><box><size>3.500 0.100 2.500</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>3.500 0.100 2.500</size></box></geometry>
           <material><ambient>0.6 0.6 0.6 1</ambient><diffuse>0.6 0.6 0.6 1</diffuse></material></visual>
       </link></model>
     <model name="wall_right"><static>true</static>
-      <pose>1.000 -1.300 1.250 0 0 0</pose>
+      <pose>0.750 -1.300 1.250 0 0 0</pose>
       <link name="link">
-        <collision name="c"><geometry><box><size>3.000 0.100 2.500</size></box></geometry></collision>
-        <visual name="v"><geometry><box><size>3.000 0.100 2.500</size></box></geometry>
+        <collision name="c"><geometry><box><size>3.500 0.100 2.500</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>3.500 0.100 2.500</size></box></geometry>
           <material><ambient>0.6 0.6 0.6 1</ambient><diffuse>0.6 0.6 0.6 1</diffuse></material></visual>
       </link></model>
     <model name="wall_near"><static>true</static>
-      <pose>-0.550 0.000 1.250 0 0 0</pose>
+      <pose>-1.050 0.000 1.250 0 0 0</pose>
       <link name="link">
         <collision name="c"><geometry><box><size>0.100 2.700 2.500</size></box></geometry></collision>
         <visual name="v"><geometry><box><size>0.100 2.700 2.500</size></box></geometry>

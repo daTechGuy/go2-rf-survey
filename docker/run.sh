@@ -71,6 +71,8 @@ fi
 # Survey CSVs are the deliverable. Keep them outside the container.
 mkdir -p "${HOME}/surveys"
 ARGS+=(-v "${HOME}/surveys:/surveys")
+# Same clock zone as the host, so container and host log times line up.
+[ -e /etc/localtime ] && ARGS+=(-v /etc/localtime:/etc/localtime:ro)
 
 # X11 passthrough for RViz, only if there is a display to pass.
 if [ -n "${DISPLAY:-}" ]; then

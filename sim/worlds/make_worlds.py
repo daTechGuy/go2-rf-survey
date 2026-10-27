@@ -4,7 +4,7 @@
     python3 sim/worlds/make_worlds.py                    # writes small_room + classroom
     python3 sim/worlds/make_worlds.py --aisle 1.0        # a tighter classroom aisle
 
-small_room.world  -- field guide 01: 3 x 2.5 m clear room, robot at the
+small_room.world  -- field guide 01: 3.5 x 2.5 m room, 1 m clear behind the start, robot at the
                      origin facing +x, a knee-high box you can enable for
                      the obstacle-stop test (--box).
 classroom.world   -- field guide 02: the robot starts in the doorway at the
@@ -67,7 +67,8 @@ def walls(x0, x1, y0, y1, h=2.5, t=0.1, door=None):
 
 
 def small_room(with_box: bool) -> str:
-    parts = walls(-0.5, 2.5, -1.25, 1.25)
+    # 1 m of floor behind the start: the 0.55 m clearance ring must be clear
+    parts = walls(-1.0, 2.5, -1.25, 1.25)
     if with_box:
         parts.append(box("box", 1.3, 0.0, 0.4, 0.4, 0.5, "0.8 0.5 0.2"))   # knee high, 1 m out
     return HEADER.format(name="small_room") + "".join(parts) + FOOTER
