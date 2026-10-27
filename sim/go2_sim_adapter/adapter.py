@@ -73,6 +73,7 @@ class SimAdapter(Node):
         self.tf = Buffer()
         self.tf_listener = TransformListener(self.tf, self)
         self.odom: Odometry | None = None
+        self.odom_t = 0.0
         self._cloud_period = 1.0 / max(1.0, g("cloud_rate_hz"))
         self._last_cloud = 0.0
         self._warned_tf = False
@@ -94,6 +95,7 @@ class SimAdapter(Node):
         self.create_subscription(WirelessController, "/wirelesscontroller", self._on_remote,
                                  qos_profile_sensor_data)
         self.create_timer(0.02, self._tick)          # 50 Hz command + sport state
+        self.create_timer(0.01, self._publish_odom)  # 100 Hz /utlidar/robot_odom
         self.get_logger().info(
             f"sim adapter up: sport/avoid/motion_switcher -> {g('sim_cmd_topic')}; "
             f"{g('sim_odom_topic')} -> /utlidar/robot_odom; "
@@ -123,7 +125,15 @@ class SimAdapter(Node):
 
     # -------------------------------------------------------------- sensors
     def _on_odom(self, m: Odometry) -> None:
-        self.odom = m
+        self.odom, self.odom_t = m, time.monotonic()
+
+    def _publish_odom(self) -> None:
+        """The sim's EKF odom runs ~40 Hz; the robot's ~150 Hz and preflight
+        wants >= 50. Repeat the latest pose at 100 Hz -- but only while it is
+        fresh, so a sim whose odometry stops still looks blind to our loop."""
+        m = self.odom
+        if m is None or time.monotonic() - self.odom_t > 0.1:
+            return
         out = Odometry()
         out.header.stamp = m.header.stamp
         out.header.frame_id = ODOM_FRAME
