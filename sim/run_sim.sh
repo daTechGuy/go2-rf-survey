@@ -45,9 +45,24 @@ case "${1:-}" in
     patched="$LOGS/.sim_bringup.launch.py"
     sed 's|("/cmd_vel/smooth", "/cmd_vel")|("/cmd_vel/smooth", "/sim/cmd_vel")|' "$src" > "$patched"
     grep -q '"/sim/cmd_vel"' "$patched" || { echo "could not patch $src (upstream changed?)" >&2; exit 1; }
+    # The sim's VLP-16 is level (+-15 deg), clips everything under 0.9 m and
+    # stays off without always_on. The Go2's head LiDAR looks down and sees
+    # within centimetres, and our stop acts at 0.5 m. So: a patched copy.
+    xd="$(ros2 pkg prefix go2_description)/share/go2_description/xacro"
+    vlp="$LOGS/.sim_velodyne.xacro"; robot="$LOGS/.sim_robot_VLP.xacro"
+    sed -e 's|<sensor name="velodyne-VLP16" type="ray">|&<always_on>true</always_on>|' \
+        -e 's|<samples>16</samples>|<samples>32</samples>|' \
+        -e 's|<min_angle>-0.2617993877991494</min_angle>|<min_angle>-0.8726646259971648</min_angle>|' \
+        -e 's|<min>0.3</min>|<min>0.1</min>|' \
+        -e 's|<min_range>0.9</min_range>|<min_range>0.15</min_range>|' "$xd/velodyne.xacro" > "$vlp"
+    sed "s|\$(find go2_description)/xacro/velodyne.xacro|$vlp|" "$xd/robot_VLP.xacro" > "$robot"
+    for want in always_on '<samples>32' '0.8726646' '<min>0.1' '<min_range>0.15'; do
+      grep -q -- "$want" "$vlp" || { echo "LiDAR patch failed ($want): upstream changed?" >&2; exit 1; }
+    done
+    grep -q "$vlp" "$robot" || { echo "could not point $robot at the patched LiDAR" >&2; exit 1; }
     : > "$PIDS"
     setsid ros2 launch "$SIM/launch/go2_sim.launch.py" world:="$wfile" gui:="$gui" bringup:="$patched" \
-      > "$LOGS/sim_gazebo.log" 2>&1 & echo $! >> "$PIDS"
+      description:="$robot" > "$LOGS/sim_gazebo.log" 2>&1 & echo $! >> "$PIDS"
     setsid python3 -u "$SIM/go2_sim_adapter/adapter.py" > "$LOGS/sim_adapter.log" 2>&1 & echo $! >> "$PIDS"
     setsid python3 -u "$SIM/go2_sim_adapter/fake_remote.py" serve > "$LOGS/sim_remote.log" 2>&1 & echo $! >> "$PIDS"
     echo "sim starting: world $world ($wfile), gui=$gui -- give Gazebo ~20 s"
@@ -58,7 +73,7 @@ case "${1:-}" in
     ros_env
     for t in /utlidar/robot_odom /utlidar/cloud_deskewed /sportmodestate /wirelesscontroller; do
       hz=$(timeout 6 ros2 topic hz "$t" --window 20 2>/dev/null | grep -m1 "average rate" | awk '{print $3}')
-      printf '  %-26s %s\n' "$t" "${hz:+$hz Hz}${hz:-NOT PUBLISHING}"
+      if [ -n "$hz" ]; then printf '  %-26s %s Hz\n' "$t" "$hz"; else printf '  %-26s NOT PUBLISHING\n' "$t"; fi
     done
     tail -n 3 "$LOGS/sim_adapter.log"
     ;;

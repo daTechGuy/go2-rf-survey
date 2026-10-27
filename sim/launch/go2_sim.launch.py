@@ -24,11 +24,13 @@ def generate_launch_description():
         DeclareLaunchArgument("world", default_value=os.path.join(cfg, "worlds/default.world")),
         DeclareLaunchArgument("gui", default_value="false"),
         DeclareLaunchArgument("bringup", description="patched champ bringup.launch.py"),
+        DeclareLaunchArgument("description",
+                              default_value=os.path.join(desc, "xacro/robot_VLP.xacro")),
     ]
     bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(L("bringup")),
         launch_arguments={
-            "description_path": os.path.join(desc, "xacro/robot_VLP.xacro"),
+            "description_path": L("description"),
             "joints_map_path": os.path.join(cfg, "config/joints/joints.yaml"),
             "links_map_path": os.path.join(cfg, "config/links/links.yaml"),
             "gait_config_path": os.path.join(cfg, "config/gait/gait.yaml"),
