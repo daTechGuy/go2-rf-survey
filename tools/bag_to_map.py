@@ -209,8 +209,29 @@ def _storage_id(uri: Path) -> str:
     return "sqlite3"
 
 
+# The robot's own outline in base_link (x forward, y left), for dropping the
+# LiDAR's view of its own legs and body from the map. Larger than the obstacle
+# check's box (go2_survey_loop/obstacles.py): legs mid-stride reach past the
+# standing footprint -- 0.41 m behind centre in the Gazebo walk test -- and a
+# map has no reason to keep anything inside the robot.
+BODY_FRONT, BODY_REAR, BODY_HALF_WIDTH = 0.40, 0.45, 0.25
+
+
+def drop_body(xyz: np.ndarray, pose, front=BODY_FRONT, rear=BODY_REAR,
+              half_width=BODY_HALF_WIDTH) -> np.ndarray:
+    """Points of one scan outside the robot's outline at ``pose`` (x, y, yaw)."""
+    if pose is None or len(xyz) == 0:
+        return xyz
+    x, y, yaw = pose
+    c, s = math.cos(yaw), math.sin(yaw)
+    dx, dy = xyz[:, 0] - x, xyz[:, 1] - y
+    xr, yr = c * dx + s * dy, -s * dx + c * dy
+    inside = (xr >= -rear) & (xr <= front) & (np.abs(yr) <= half_width)
+    return xyz[~inside]
+
+
 def read_bag(uri: Path, cloud_topic: str, odom_topic: str):
-    """Yield ('cloud', xyz, frame_id) and ('odom', (x, y)) in recorded order."""
+    """Yield ('cloud', xyz, frame_id) and ('odom', (x, y, yaw)) in recorded order."""
     import rosbag2_py
     from rclpy.serialization import deserialize_message
     from rosidl_runtime_py.utilities import get_message
@@ -235,7 +256,9 @@ def read_bag(uri: Path, cloud_topic: str, odom_topic: str):
         elif odom_cls is not None and topic == odom_topic:
             m = deserialize_message(data, odom_cls)
             pose = m.pose.pose if hasattr(m.pose, "pose") else m.pose
-            yield "odom", (pose.position.x, pose.position.y)
+            q = pose.orientation
+            yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+            yield "odom", (pose.position.x, pose.position.y, yaw)
 
 
 def main() -> int:
@@ -251,6 +274,8 @@ def main() -> int:
                     help="use every Nth scan (raise to go faster on long drives)")
     ap.add_argument("--force", action="store_true",
                     help="build even if clouds are not in a world-fixed frame")
+    ap.add_argument("--keep-body", action="store_true",
+                    help="keep the LiDAR's view of the robot itself (legs) in the map")
     args = ap.parse_args()
 
     out = args.out or args.bag.with_name(args.bag.name + "_map")
@@ -258,6 +283,8 @@ def main() -> int:
     traj: list[tuple[float, float]] = []
     frames: set[str] = set()
     n = 0
+    pose = None          # latest odometry (x, y, yaw), to drop the robot from each scan
+    dropped = 0
 
     for item in read_bag(args.bag, args.cloud_topic, args.odom_topic):
         if item[0] == "cloud":
@@ -265,11 +292,16 @@ def main() -> int:
             frames.add(frame)
             n += 1
             if n % args.every == 0:
+                if not args.keep_body:
+                    kept = drop_body(xyz, pose)
+                    dropped += len(xyz) - len(kept)
+                    xyz = kept
                 acc.add(xyz)
             if n % 200 == 0:
                 print(f"  {n} scans read, {acc.raw_points:,} raw points", flush=True)
         else:
-            traj.append(item[1])
+            pose = item[1]
+            traj.append(pose[:2])
 
     if not frames:
         raise SystemExit("no clouds read from the bag")
@@ -284,6 +316,8 @@ def main() -> int:
     stats = finish_map(pts, traj, out, res=args.voxel, title=f"Go2 map — {args.bag.name}")
 
     print(f"scans      {acc.scans} used of {n}, {acc.raw_points:,} raw -> {stats['points']:,} voxels")
+    if not args.keep_body:
+        print(f"robot      {dropped:,} points of the robot itself left out (--keep-body keeps them)")
     print(f"floor      z = {stats['floor_z']:.2f} m in {sorted(frames)[0]}")
     x0, x1, y0, y1 = stats["extent"]
     print(f"extent     {x1 - x0:.1f} x {y1 - y0:.1f} m ({stats['grid'][0]}x{stats['grid'][1]} cells)")
