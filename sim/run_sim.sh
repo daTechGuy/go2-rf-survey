@@ -59,7 +59,14 @@ case "${1:-}" in
         -e 's|<min_angle>-0.2617993877991494</min_angle>|<min_angle>-0.8726646259971648</min_angle>|' \
         -e 's|<min>0.3</min>|<min>0.1</min>|' \
         -e 's|<min_range>0.9</min_range>|<min_range>0.15</min_range>|' "$xd/velodyne.xacro" > "$vlp"
-    sed "s|\$(find go2_description)/xacro/velodyne.xacro|$vlp|" "$xd/robot_VLP.xacro" > "$robot"
+    # Ground-truth pose (p3d) at 150 Hz like the Go2's odometry, not 10 Hz:
+    # the adapter places every scan with the pose at that scan's sim time.
+    gz="$LOGS/.sim_gazebo.xacro"
+    sed 's|<update_rate>10.0</update_rate>|<update_rate>150.0</update_rate>|' "$xd/gazebo.xacro" > "$gz"
+    grep -q '<update_rate>150.0' "$gz" || { echo "ground-truth rate patch failed: upstream changed?" >&2; exit 1; }
+    sed -e "s|\$(find go2_description)/xacro/velodyne.xacro|$vlp|" \
+        -e "s|\$(find go2_description)/xacro/gazebo.xacro|$gz|" "$xd/robot_VLP.xacro" > "$robot"
+    grep -q "$gz" "$robot" || { echo "could not point $robot at the patched gazebo.xacro" >&2; exit 1; }
     for want in always_on '<update_rate>15' '<samples>32' '0.8726646' '<min>0.1' '<min_range>0.15'; do
       grep -q -- "$want" "$vlp" || { echo "LiDAR patch failed ($want): upstream changed?" >&2; exit 1; }
     done
