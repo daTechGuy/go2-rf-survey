@@ -219,9 +219,7 @@ class SimAdapter(Node):
             s.yaw_speed = float(v.angular.z)
             s.imu_state.rpy = [0.0, 0.0, float(yaw_of(q))]
             s.imu_state.quaternion = [float(q.w), float(q.x), float(q.y), float(q.z)]
-            s.body_height = float(self.model.body_height(p.z))
-        else:
-            s.body_height = float(self.model.body_height())
+        s.body_height = float(self.model.body_height())
         self.state_pub.publish(s)
 
 

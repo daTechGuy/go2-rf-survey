@@ -146,7 +146,8 @@ class RobotModel:
             return MODE_IDLE
         return MODE_WALK if any(abs(v) > 1e-3 for v in self.command(now)) else MODE_STAND
 
-    def body_height(self, sim_height: float | None = None) -> float:
-        if self.damped or not self.standing:
-            return 0.08
-        return sim_height if sim_height and sim_height > 0.15 else 0.32
+    def body_height(self) -> float:
+        """The Go2's standing height when standing. The CHAMP sim robot
+        stands at ~0.21 m, below the 0.25 m preflight reads as 'lying down'
+        on the real robot; only standing vs not is meaningful here."""
+        return 0.08 if self.damped or not self.standing else 0.32
