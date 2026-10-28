@@ -266,7 +266,8 @@ class TestRouteLine(unittest.TestCase):
         """Out-and-back 3 m with what the Gazebo Go2 did: a sideways shift
         while turning on the spot (and optionally a slow sideways creep while
         walking). Returns (completed, {x: |y|} along the return leg)."""
-        fp = FollowerParams(lookahead=lookahead)
+        # the turn speeds of the Gazebo runs this reproduces (before 2026-10-28)
+        fp = FollowerParams(lookahead=lookahead, max_vyaw=0.5, min_vyaw=0.15)
         wps = to_world(Pose2D(0, 0, 0), out_and_back_local(3.0))
         m = Mission(wps, Pose2D(0, 0, 0), 0.0, fp, SafetyParams())
         pose, t, turned, prof = Pose2D(0, 0, 0), 0.0, 0.0, {}

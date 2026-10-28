@@ -93,8 +93,8 @@ class LoopNode(Node):
         d("rate_hz", 10.0)
         d("cloud_stride", 4)
         d("max_vx", 0.30)
-        d("max_vyaw", 0.50)
-        d("min_vyaw", 0.30)                 # turning in place never commands less
+        d("max_vyaw", 1.00)
+        d("min_vyaw", 0.70)                 # turning in place never commands less (follower.py)
         d("reach_tol", 0.20)
         d("lookahead", 0.6)                 # m along the route line; 0 = aim at corners
         d("stop_distance", 0.50)

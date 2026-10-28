@@ -46,10 +46,12 @@ from go2_survey_loop.geometry import Pose2D, wrap_angle
 @dataclass(frozen=True)
 class FollowerParams:
     max_vx: float = 0.30        # m/s -- deliberately half the bridge's ceiling
-    max_vyaw: float = 0.50      # rad/s
-    # rad/s while turning in place. Was 0.15; raised 2026-10-28: firmware
-    # 'mcf' turns at only ~1/3 of the commanded rate, so 0.15 crawled at ~0.05.
-    min_vyaw: float = 0.30
+    max_vyaw: float = 1.00      # rad/s
+    # rad/s while turning in place. Was 0.15. On 2026-10-28 the Go2 (firmware
+    # 'mcf') only swayed for gentle turn requests -- from the remote too --
+    # and stepped round properly above that: a 1.0 rad/s turn test delivered
+    # 58%, 0.2-0.5 delivered 8-39%. So turns in place stay well above it.
+    min_vyaw: float = 0.70
     k_lin: float = 0.6          # 1/s, slows inside ~0.5 m of a corner
     k_yaw: float = 1.2          # 1/s
     reach_tol: float = 0.20     # m

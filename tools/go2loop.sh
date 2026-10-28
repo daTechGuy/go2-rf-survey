@@ -168,7 +168,7 @@ case "${1:-}" in
     mkdir -p "${HOME}/surveys"
     : > "$BLOG"
     DETACH="$BRIDGE" IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
-      "PYTHONPATH=/workspace/go2_survey_bridge:\$PYTHONPATH python3 -u -m go2_survey_bridge.bridge_node --ros-args -p max_vx:=0.3 -p max_vyaw:=0.5 $* > /surveys/${BRIDGE}.log 2>&1" \
+      "PYTHONPATH=/workspace/go2_survey_bridge:\$PYTHONPATH python3 -u -m go2_survey_bridge.bridge_node --ros-args -p max_vx:=0.3 -p max_vyaw:=1.0 $* > /surveys/${BRIDGE}.log 2>&1" \
       >/dev/null || { echo "failed to start bridge container" >&2; exit 1; }
     sleep 4
     if bridge_running; then show_log "$BLOG" 6; else echo "bridge exited:"; tail -n 20 "$BLOG"; exit 1; fi
