@@ -1,4 +1,11 @@
-# 03 — Turn diagnosis (do this next, before guide 01 step K)
+# 03 — Turn diagnosis (DONE 2026-10-28: no need to repeat)
+
+> **Solved the same day.** The Go2 only *sways* in place when asked for a
+> gentle turn — from its own remote too. Tries A and B below made no
+> difference; `state-watch` showed mode/gait/foot fields are always 0 on this
+> firmware. The turn test now uses a brisk 1.0 rad/s turn, which passes, and
+> the first autonomous 1 m walk followed. Kept as a record of how it was found;
+> details in [../autonomous-loop.md](../autonomous-loop.md), Stage 1.
 
 **Why:** on 2026-10-28 the turn test (guide 01, step J) failed three times
 the same way. The robot reacted to our turn command within 0.1 s and stopped

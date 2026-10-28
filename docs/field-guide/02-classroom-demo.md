@@ -75,6 +75,7 @@ On the warm-up patch, 1.5 m clear around.
    bash tools/go2loop.sh turn-test --i-confirm-breathing
    bash tools/go2loop.sh bridge-down
    ```
+   It steps round briskly to the left, about 15–30°, in half a second.
    The turn test must print **PASS**. If it keeps turning: **L2 + B**.
    **FAIL → no demo walk today.** (Plan B, at the end of this guide.)
 

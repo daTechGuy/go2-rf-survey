@@ -131,9 +131,16 @@ kill %1
 ## Stage 1 — bridge only, robot turns on the spot
 
 Proves `/cmd_vel` reaches the robot through the bridge, that the robot
-follows it **promptly and in proportion**, and that the bridge's **watchdog**
-stops it when commands stop. The only motion is a slow turn in place of
-roughly 20°, then a stop. Open floor, you on the remote.
+follows it **promptly and in the right direction**, and that the bridge's
+**watchdog** stops it when commands stop. The only motion is a brisk half-second
+turn in place (1.0 rad/s, ≈29° commanded), then a stop. Open floor, you on the remote.
+
+**Why brisk:** the Go2 (firmware `mcf`) only *sways* in place when asked for a
+gentle turn, from its own remote too. Measured 2026-10-28 from the sticks:
+10% → 0.03 rad/s, 20% → 0.22, 30% → 0.52, 40% → 0.77. Eight turn tests at
+0.2–0.5 rad/s delivered 3–39% of the commanded turn; 1.0 rad/s × 0.5 s
+delivered 58% and passed. The route follower therefore turns in place at
+0.7–1.0 rad/s (`min_vyaw`, `max_vyaw`), and the bridge allows 1.0.
 
 All on the robot host (`unitree@ubuntu`):
 
@@ -158,22 +165,34 @@ All on the robot host (`unitree@ubuntu`):
    ```
    It refuses (and sends nothing) unless odometry and `/sportmodestate` are
    live, the bridge is listening, the robot isn't already turning, and speed
-   and duration are within hard caps (0.3 rad/s, 3 s). It never sends a zero:
+   and duration are within hard caps (1.0 rad/s, 3 s). It never sends a zero:
    stopping is the watchdog's job, which is what's under test.
 5. `bash tools/go2loop.sh bridge-down`
 
 It logs ~50 Hz to `~/surveys/turn_<time>.csv` — what the bridge sent, heading
 from **both** the LiDAR odometry and the IMU, IMU yaw rate, sport mode/gait/
-error code — and prints a report. **PASS** needs all of: response within
-0.5 s, at least half the commanded rotation while commanded, no swing over 5°
-after the stop, both heading sources within 8°, and still in the last 2 s.
+error code — and prints a report, plus the robot's status code for every
+request. **PASS** needs all of: response within 0.5 s, the right direction,
+at least 15% of the commanded rotation while commanded (`--min-ratio`; was
+50% until the sway zone was understood), no swing over 5° after the stop,
+both heading sources within 8°, and still in the last 2 s.
 **If it keeps turning after the command ends, L2 + B.**
 
 The two heading sources are what make a failure diagnosable: if they agree,
 the motion was real (lag, wrong mode); if they disagree, the LiDAR odometry
 jumped and the robot didn't move.
 
-### First attempt (2026-10-21) — FAIL, cause not yet known
+### 2026-10-28 — solved: PASS, then Stage 2 done
+
+Mode `mcf` accepted (firmware 1.1.6+ name for `normal`). Every Move was
+accepted (code 0); `/sportmodestate` mode/gait and the foot fields read 0
+even while walking on the sticks, so they say nothing on this firmware. The
+cause of the under-response was the sway zone above. With the brisk turn:
+Stage 1 PASS, then the first untethered 1 m out-and-back (`demo.sh
+--remote-start --detach`, started with SELECT + UP): done in 22 s, 0.19 m
+from the start, floorplan built.
+
+### First attempt (2026-10-21) — FAIL (cause found 2026-10-28, above)
 
 Commanded +0.2 rad/s for 2 s (≈23°). Measured on LiDAR odometry: **3°** while
 commanded, then a swing to **+26° about 1.5 s after the stop**, back to +8°,
