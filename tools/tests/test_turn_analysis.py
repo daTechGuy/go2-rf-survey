@@ -152,6 +152,34 @@ class TestScenarios(unittest.TestCase):
         self.assertIn("STAGE 1: PASS", text)
 
 
+class TestMinRatio(unittest.TestCase):
+    """Firmware 'mcf' (2026-10-28): prompt, right way, clean stop, ~1/3 delivered."""
+
+    def sluggish(self, frac):
+        return synth(lambda t: frac * VYAW if T_CMD0 + 0.1 <= t < T_CMD1 else 0.0)
+
+    def test_third_fails_the_strict_rule(self):
+        r = analyse(self.sluggish(0.33))
+        self.assertFalse(passed(r))
+        self.assertTrue(any("UNDER-RESPONSE" in v and "needs 50%" in v for v in r.verdicts))
+
+    def test_third_passes_at_15_percent(self):
+        r = analyse(self.sluggish(0.33), min_ratio=0.15)
+        self.assertTrue(passed(r), r.verdicts)
+        self.assertIn("delivered            : 3", format_report(r))   # ~31-33%
+
+    def test_worst_mcf_run_still_fails(self):
+        # avoid-off run: 1.2 of 37.5 deg -- 3% is not a turn
+        r = analyse(self.sluggish(0.03), min_ratio=0.15)
+        self.assertFalse(passed(r))
+
+    def test_wrong_way_always_fails(self):
+        r = analyse(synth(lambda t: -0.5 * VYAW if T_CMD0 <= t < T_CMD1 else 0.0),
+                    min_ratio=0.0)
+        self.assertFalse(passed(r))
+        self.assertTrue(any(v.startswith("WRONG WAY") for v in r.verdicts))
+
+
 class TestReplies(unittest.TestCase):
     def test_counts_codes_and_delay(self):
         sent = {i: (0.02 * i, MOVE, False) for i in range(10)}

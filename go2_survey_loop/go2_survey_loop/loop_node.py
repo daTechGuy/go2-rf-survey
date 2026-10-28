@@ -94,6 +94,7 @@ class LoopNode(Node):
         d("cloud_stride", 4)
         d("max_vx", 0.30)
         d("max_vyaw", 0.50)
+        d("min_vyaw", 0.30)                 # turning in place never commands less
         d("reach_tol", 0.20)
         d("lookahead", 0.6)                 # m along the route line; 0 = aim at corners
         d("stop_distance", 0.50)
@@ -114,7 +115,8 @@ class LoopNode(Node):
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.dry_run = bool(g("dry_run"))
         self.follow = FollowerParams(max_vx=g("max_vx"), max_vyaw=g("max_vyaw"),
-                                     reach_tol=g("reach_tol"), lookahead=g("lookahead"))
+                                     min_vyaw=g("min_vyaw"), reach_tol=g("reach_tol"),
+                                     lookahead=g("lookahead"))
         self.obst = ObstacleParams(
             body_front=g("body_front"), body_rear=g("body_rear"),
             body_half_width=g("body_half_width"), stop_distance=g("stop_distance"),

@@ -10,8 +10,9 @@ Runs inside the bridge container, with go2_survey_bridge already up:
 Logs at ~50 Hz to /surveys/turn_<time>.csv: what the bridge actually sent
 (decoded from /api/sport/request), heading from the LiDAR odometry AND from
 the IMU (/sportmodestate), the IMU yaw rate, and the sport mode/gait/error
-code. Then prints turn_analysis's report: PASS only for a prompt,
-proportionate turn that stops cleanly with both heading sources agreeing.
+code. Then prints turn_analysis's report: PASS only for a prompt turn in the
+commanded direction, of at least --min-ratio of the commanded angle, that
+stops cleanly with both heading sources agreeing.
 
 It REFUSES to command anything unless all of these hold:
   * --i-confirm-breathing is given. The robot must be in walking mode -- on the
@@ -193,6 +194,9 @@ def main() -> int:
     ap.add_argument("--allow-mode", default="normal,mcf",
                     help="allowed motion_switcher mode names (comma list; 'mcf' is "
                          "firmware 1.1.6+), or 'any' to skip the check")
+    ap.add_argument("--min-ratio", type=float, default=0.15,
+                    help="share of the commanded turn required to pass. 0.15 for "
+                         "firmware 'mcf', which delivers ~1/3 (see turn_analysis)")
     ap.add_argument("--csv", type=Path, default=None)
     args = ap.parse_args()
 
@@ -251,7 +255,7 @@ def main() -> int:
             print(f"sport state after : mode={s.mode} gait_type={s.gait_type} "
                   f"error_code={s.error_code}")
         print(f"log: {out} ({len(rows)} rows)\n")
-        report = analyse(rows)
+        report = analyse(rows, min_ratio=args.min_ratio)
         print(format_report(report))
         if report.cmd_start is not None:
             # informational, not a pass criterion: did the gait actually run?

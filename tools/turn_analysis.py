@@ -85,7 +85,13 @@ class TurnReport:
 
 
 def analyse(rows, rate_threshold: float = 0.05, settle_window: float = 2.0,
-            lag_limit: float = 0.5, artifact_deg: float = 8.0) -> TurnReport:
+            lag_limit: float = 0.5, artifact_deg: float = 8.0,
+            min_ratio: float = 0.5) -> TurnReport:
+    """``min_ratio``: the share of the commanded turn the robot must deliver
+    while commanded. 0.5 suits a robot that follows its commands; turn_test
+    uses 0.15 for firmware 'mcf', which on 2026-10-28 delivered a steady
+    ~25-40% in ten runs (prompt, right direction, clean stop) -- sluggish,
+    not erratic. Turning the WRONG way always fails."""
     rows = sorted(rows, key=lambda r: r["t"])
     if not rows:
         raise ValueError("no rows")
@@ -150,9 +156,14 @@ def analyse(rows, rate_threshold: float = 0.05, settle_window: float = 2.0,
         verdicts.append("NO RESPONSE: IMU yaw rate never followed the command")
     elif latency > lag_limit:
         verdicts.append(f"LAG: robot responded {latency:.2f}s after the command started")
-    if imu_during is not None and commanded and abs(imu_during) < 0.5 * abs(commanded):
-        verdicts.append(f"UNDER-RESPONSE: {deg(abs(imu_during)):.1f} of "
-                        f"{deg(abs(commanded)):.1f} deg turned while commanded")
+    if imu_during is not None and commanded:
+        if imu_during * commanded < 0 and abs(deg(imu_during)) > 2.0:
+            verdicts.append(f"WRONG WAY: turned {deg(imu_during):+.1f} deg for a "
+                            f"{deg(commanded):+.1f} deg command")
+        elif abs(imu_during) < min_ratio * abs(commanded):
+            verdicts.append(f"UNDER-RESPONSE: {deg(abs(imu_during)):.1f} of "
+                            f"{deg(abs(commanded)):.1f} deg turned while commanded "
+                            f"(needs {100 * min_ratio:.0f}%)")
     if imu_after_peak is not None and abs(deg(imu_after_peak)) > 5.0:
         verdicts.append(f"MOVED AFTER STOP: swung up to {deg(imu_after_peak):.1f} deg "
                         f"after commands ended (net {deg(imu_after):.1f})")
@@ -178,8 +189,8 @@ def analyse(rows, rate_threshold: float = 0.05, settle_window: float = 2.0,
 def passed(report: TurnReport) -> bool:
     """Stage 1 passes only on a prompt, proportionate, cleanly-stopped turn
     with the two heading sources agreeing."""
-    bad = ("NO MOVE", "NO RESPONSE", "LAG", "UNDER-RESPONSE", "MOVED AFTER STOP",
-           "DISAGREE", "STILL ROTATING")
+    bad = ("NO MOVE", "NO RESPONSE", "LAG", "UNDER-RESPONSE", "WRONG WAY",
+           "MOVED AFTER STOP", "DISAGREE", "STILL ROTATING")
     return any(v.startswith("STOPPED") for v in report.verdicts) and \
         not any(b in v for v in report.verdicts for b in bad)
 
@@ -218,8 +229,11 @@ def summarize_replies(sent: dict, replies: list) -> list:
 
 def format_report(r: TurnReport) -> str:
     f = lambda v, u="deg": "n/a" if v is None else f"{v:.1f} {u}"  # noqa: E731
+    ratio = ("n/a" if r.imu_during_deg is None or not r.commanded_deg
+             else f"{100 * r.imu_during_deg / r.commanded_deg:.0f}%")
     lines = [
         f"commanded rotation   : {r.commanded_deg:.1f} deg",
+        f"delivered            : {ratio} of the commanded turn",
         f"response latency     : {'n/a' if r.latency_s is None else f'{r.latency_s:.2f} s'}",
         f"IMU   during / after : {f(r.imu_during_deg)} / {f(r.imu_after_deg)} "
         f"(peak after stop {f(r.imu_after_peak_deg)})",

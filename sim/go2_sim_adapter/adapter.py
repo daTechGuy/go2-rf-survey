@@ -73,7 +73,12 @@ class SimAdapter(Node):
         d("sim_cloud_topic", "/velodyne_points")
         d("cloud_rate_hz", 15.0)
         d("move_timeout_s", 0.0)
+        # Scale the turn rate actually driven. 1.0 = obey; ~0.33 mimics the
+        # real Go2 on firmware 'mcf', which turned at ~1/3 of the commanded
+        # rate on 2026-10-28 (sim/run_sim.sh: YAW_GAIN=0.33).
+        d("yaw_gain", 1.0)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
+        self.yaw_gain = float(g("yaw_gain"))
 
         self.model = RobotModel(move_timeout_s=float(g("move_timeout_s")))
         self.pose_source = str(g("pose_source"))
@@ -215,7 +220,8 @@ class SimAdapter(Node):
         now = time.monotonic()
         vx, vy, wz = self.model.command(now)
         tw = Twist()
-        tw.linear.x, tw.linear.y, tw.angular.z = float(vx), float(vy), float(wz)
+        tw.linear.x, tw.linear.y = float(vx), float(vy)
+        tw.angular.z = float(wz) * self.yaw_gain
         self.cmd_pub.publish(tw)
 
         s = SportModeState()
@@ -234,7 +240,7 @@ class SimAdapter(Node):
 
 
 def main() -> None:
-    rclpy.init()
+    rclpy.init(args=sys.argv)
     node = SimAdapter()
     try:
         rclpy.spin(node)

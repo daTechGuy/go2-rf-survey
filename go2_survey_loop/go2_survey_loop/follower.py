@@ -47,7 +47,9 @@ from go2_survey_loop.geometry import Pose2D, wrap_angle
 class FollowerParams:
     max_vx: float = 0.30        # m/s -- deliberately half the bridge's ceiling
     max_vyaw: float = 0.50      # rad/s
-    min_vyaw: float = 0.15      # rad/s -- slower than this, sport mode may not turn
+    # rad/s while turning in place. Was 0.15; raised 2026-10-28: firmware
+    # 'mcf' turns at only ~1/3 of the commanded rate, so 0.15 crawled at ~0.05.
+    min_vyaw: float = 0.30
     k_lin: float = 0.6          # 1/s, slows inside ~0.5 m of a corner
     k_yaw: float = 1.2          # 1/s
     reach_tol: float = 0.20     # m

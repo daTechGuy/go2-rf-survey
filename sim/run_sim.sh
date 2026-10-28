@@ -3,6 +3,8 @@
 # robot to our code: run tools/go2loop.sh, tools/demo.sh etc. as on the robot.
 #
 #   bash sim/run_sim.sh up [small_room|classroom|box] [--gui]
+#   YAW_GAIN=0.33 bash sim/run_sim.sh up ...   turn at 1/3 the commanded rate,
+#                                     like the real Go2 on firmware 'mcf'
 #   bash sim/run_sim.sh status        what's running, key topic rates
 #   bash sim/run_sim.sh press SELECT+UP [secs]   the fake remote
 #   bash sim/run_sim.sh stick 0.9 [secs]
@@ -74,7 +76,8 @@ case "${1:-}" in
     : > "$PIDS"
     setsid ros2 launch "$SIM/launch/go2_sim.launch.py" world:="$wfile" gui:="$gui" headless:="$([ "$gui" = true ] && echo False || echo True)" bringup:="$patched" \
       description:="$robot" > "$LOGS/sim_gazebo.log" 2>&1 & echo $! >> "$PIDS"
-    setsid python3 -u "$SIM/go2_sim_adapter/adapter.py" > "$LOGS/sim_adapter.log" 2>&1 & echo $! >> "$PIDS"
+    setsid python3 -u "$SIM/go2_sim_adapter/adapter.py" --ros-args -p yaw_gain:="${YAW_GAIN:-1.0}" \
+      > "$LOGS/sim_adapter.log" 2>&1 & echo $! >> "$PIDS"
     setsid python3 -u "$SIM/go2_sim_adapter/fake_remote.py" serve > "$LOGS/sim_remote.log" 2>&1 & echo $! >> "$PIDS"
     echo "sim starting: world $world ($wfile), gui=$gui -- give Gazebo ~20 s"
     echo "then: bash sim/run_sim.sh status"
