@@ -186,7 +186,7 @@ case "${1:-}" in
     ;;
   state-watch)
     IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
-      "$SRC; python3 -u /workspace/tools/state_watch.py" \
+      "$SRC; python3 -u /workspace/tools/state_watch.py ${*:2}" \
       2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
     ;;
   remote-keys)

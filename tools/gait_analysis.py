@@ -66,6 +66,7 @@ def liftoffs(forces, baseline, low: float = 0.35, high: float = 0.65) -> int:
 class StepReport:
     liftoffs: dict          # foot -> count during the window
     lift_m: dict            # foot -> max rise above standing height, m (or None)
+    has_data: bool = True   # False: no foot force and no foot height reported
 
     @property
     def stepped(self) -> bool:
@@ -82,7 +83,7 @@ def steps_between(rows, t0: float, t1: float, baseline_rows=None) -> StepReport:
     before = [r for r in rows if r["t"] < t0]
     window = [r for r in rows if t0 <= r["t"] <= t1]
     base_rows = baseline_rows or before or rows
-    counts, lifts = {}, {}
+    counts, lifts, seen = {}, {}, False
     for i, foot in enumerate(FEET):
         fk, zk = f"ff{i}", f"fz{i}"
         base_f = _median([r[fk] for r in base_rows if r.get(fk) is not None])
@@ -90,10 +91,14 @@ def steps_between(rows, t0: float, t1: float, baseline_rows=None) -> StepReport:
         base_z = _median([r[zk] for r in base_rows if r.get(zk) is not None])
         zs = [r[zk] for r in window if r.get(zk) is not None]
         lifts[foot] = None if base_z is None or not zs else max(zs) - base_z
-    return StepReport(counts, lifts)
+        # all-zero feet (the Gazebo sim) are "not reported", not "planted"
+        seen = seen or any(r.get(k) for r in base_rows + window for k in (fk, zk))
+    return StepReport(counts, lifts, seen)
 
 
 def format_steps(rep: StepReport) -> str:
+    if not rep.has_data:
+        return "feet lift-offs/max rise: no foot data reported"
     feet = ", ".join(
         f"{foot} {rep.liftoffs[foot]}x"
         + ("" if rep.lift_m[foot] is None else f"/{100 * rep.lift_m[foot]:.0f}cm")

@@ -95,6 +95,13 @@ class TestSteps(unittest.TestCase):
         self.assertIsNone(rep.lift_m["FR"])
         self.assertIn("STEPPED", format_steps(rep))
 
+    def test_all_zero_feet_are_no_data_not_planted(self):
+        # the Gazebo sim leaves foot force and position at zero
+        rep = steps_between(rows(100, force=lambda i, k: 0, z=lambda i, k: 0.0), 1.0, 2.0)
+        self.assertFalse(rep.has_data)
+        self.assertIn("no foot data", format_steps(rep))
+        self.assertNotIn("NO STEPS", format_steps(rep))
+
     def test_no_standing_rows_uses_whole_log(self):
         rep = steps_between(rows(100, force=trot, z=trot_z), 0.0, 2.0)
         self.assertTrue(rep.stepped)

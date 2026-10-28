@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Watch what the robot reports about its own gait. READ-ONLY: sends nothing.
 
-    IFACE=eth0 bash docker/run.sh python3 /workspace/tools/state_watch.py
+    bash tools/go2loop.sh state-watch               # until Ctrl-C
+    bash tools/go2loop.sh state-watch --seconds 30  # stops by itself
 
 Why: on 2026-10-28 (firmware 'mcf') our turn commands got a twist on planted
 feet, and /sportmodestate said mode=0 gait=0 the whole time. We don't know
@@ -17,6 +18,7 @@ steps are judged against. Ctrl-C prints a summary. Everything is logged at
 
 from __future__ import annotations
 
+import argparse
 import csv
 import sys
 import time
@@ -115,12 +117,18 @@ class Watch(Node):
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seconds", type=float, default=0.0,
+                    help="stop by itself after this long (0 = until Ctrl-C)")
+    args = ap.parse_args()
     out = Path(f"/surveys/state_{time.strftime('%Y%m%d_%H%M%S')}.csv")
     out.parent.mkdir(parents=True, exist_ok=True)
     rclpy.init()
     node = Watch(out)
     try:
-        rclpy.spin(node)
+        end = time.monotonic() + args.seconds if args.seconds > 0 else None
+        while end is None or time.monotonic() < end:
+            rclpy.spin_once(node, timeout_sec=0.1)
     except KeyboardInterrupt:
         pass
     finally:
