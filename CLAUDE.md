@@ -49,9 +49,14 @@ commanded turn and fails a wrong-way turn. The sim (`YAW_GAIN=0.5`) completes
 the 1 m out-and-back. `/sportmodestate` mode/gait and foot fields are
 meaningless on this firmware. A hand-driven map of the room worked.
 
-**Next action:** guide 01 from step J with
-`turn-test --i-confirm-breathing --vyaw 1.0 --seconds 0.5` (after
-`bridge-up`), then K (rehearsal), then [ASK] L (1 m autonomous). Robot-side
+**First autonomous walk, 2026-10-29:** `demo.sh --length 1.0 --remote-start
+--detach`, untethered, started with SELECT+UP: out 1 m, turned round, back,
+`demo finished: done` in 22 s, 0.19 m from the start, floorplan built.
+Stage 2 passed.
+
+**Next action:** the 3 m route, then the classroom (guide 02). Each session:
+route (user sudo) → preflight → `bridge-up` + `turn-test --i-confirm-breathing`
+(defaults to the 1.0 rad/s × 0.5 s turn that passes) → [ASK] demo. Robot-side
 state that resets each boot: `sudo ip route replace default via
 192.168.123.222 dev eth0` (user runs sudo).
 
