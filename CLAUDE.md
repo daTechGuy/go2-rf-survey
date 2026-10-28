@@ -40,10 +40,18 @@ image rebuilt; camera works; motion mode is `mcf` (firmware 1.1.6+ name for
 Turn test failed 3× by under-response: prompt start, clean stop, but a twist
 on planted feet with `/sportmodestate` mode=0 gait=0 — the gait never ran.
 
-**Next action:** [`docs/field-guide/03-turn-diagnosis.md`](docs/field-guide/03-turn-diagnosis.md):
-`state-watch` while the user stick-walks (read-only), then [ASK] turn test
-with `auto_balance_stand:=false`, then [ASK] J2 `sport_prep`. The turn test
-now prints whether the feet stepped (`tools/gait_analysis.py`). Robot-side
+**Solved later that day:** the Go2 only *sways* for gentle turn requests —
+from the remote too (stick 10% → 0.03 rad/s, 30% → 0.5, 40% → 0.8). The
+0.2–0.5 rad/s tests sat in that zone. At 1.0 rad/s × 0.5 s the turn test
+delivered 58% and **passed Stage 1**. Follower now turns in place at
+0.7–1.0 rad/s (bridge limit 1.0); the turn-test rule needs 15% of the
+commanded turn and fails a wrong-way turn. The sim (`YAW_GAIN=0.5`) completes
+the 1 m out-and-back. `/sportmodestate` mode/gait and foot fields are
+meaningless on this firmware. A hand-driven map of the room worked.
+
+**Next action:** guide 01 from step J with
+`turn-test --i-confirm-breathing --vyaw 1.0 --seconds 0.5` (after
+`bridge-up`), then K (rehearsal), then [ASK] L (1 m autonomous). Robot-side
 state that resets each boot: `sudo ip route replace default via
 192.168.123.222 dev eth0` (user runs sudo).
 

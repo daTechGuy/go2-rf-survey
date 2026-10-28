@@ -193,11 +193,12 @@ can be changed in the software once we know what your remote sends.
    You want `name='mcf'` (this robot's firmware) or `name='normal'` (older
    firmware's name for the same mode). **Anything else: stop here** and note it.
 
-## J. Stage 1: the turn test (the robot turns about 20° on the spot)
+## J. Stage 1: the turn test (the robot turns about 15–30° on the spot)
 
-The first time the software moves the robot. It turns slowly in place for
-2 seconds, then must stop by itself. The cable can stay plugged in; a 20°
-turn won't wrap it.
+The first time the software moves the robot. It turns briskly in place for
+half a second, then must stop by itself. The cable can stay plugged in; a
+30° turn won't wrap it. (Briskly on purpose: asked for a gentle turn, this
+Go2 only sways in place, from the remote too. Found 2026-10-28.)
 
 1. [ ] Still breathing (the sway from I3). If it stopped, L2 + A then a single START again.
 2. [ ] Remote in hand, thumb near **L2 + B**. Everyone 1.5 m back.
@@ -211,7 +212,7 @@ turn won't wrap it.
    ```bash
    bash tools/go2loop.sh turn-test --i-confirm-breathing
    ```
-   **Watch:** it turns slowly to the left about 20°, then stops and stays stopped.
+   **Watch:** it steps round to the left about 15–30°, then stops and stays stopped.
    **If it keeps turning or swings after stopping: L2 + B.**
 5. [ ] Read the report it prints. It ends **PASS** or **FAIL** with the reasons.
 6. [ ] Always, pass or fail:

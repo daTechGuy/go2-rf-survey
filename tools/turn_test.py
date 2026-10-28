@@ -5,7 +5,7 @@ stops it -- and log enough to say *why* if it does not.
 Runs inside the bridge container, with go2_survey_bridge already up:
 
     python3 /workspace/tools/turn_test.py --i-confirm-breathing
-    python3 /workspace/tools/turn_test.py --i-confirm-breathing --vyaw -0.2   # clockwise
+    python3 /workspace/tools/turn_test.py --i-confirm-breathing --vyaw -1.0   # clockwise
 
 Logs at ~50 Hz to /surveys/turn_<time>.csv: what the bridge actually sent
 (decoded from /api/sport/request), heading from the LiDAR odometry AND from
@@ -188,8 +188,10 @@ def preflight(p: Probe, args, mode) -> list:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--vyaw", type=float, default=0.2, help="rad/s, + = CCW (left)")
-    ap.add_argument("--seconds", type=float, default=2.0)
+    # 1.0 rad/s x 0.5 s (~29 deg): fast enough that the Go2 steps round
+    # rather than swaying in place (see MAX_VYAW). Was 0.2 x 2.0.
+    ap.add_argument("--vyaw", type=float, default=1.0, help="rad/s, + = CCW (left)")
+    ap.add_argument("--seconds", type=float, default=0.5)
     ap.add_argument("--settle", type=float, default=5.0, help="logging after the stop")
     ap.add_argument("--rate", type=float, default=20.0, help="command publish rate, Hz")
     ap.add_argument("--i-confirm-breathing", action="store_true")
