@@ -60,7 +60,7 @@ leg swing.
 | **Speed cap** | 0.3 m/s, 0.5 rad/s in the node; clamped again in the bridge | both |
 | **Watchdog** | `/cmd_vel` silent for 0.3 s → StopMove | bridge |
 | **E-stop** | latching; clearing it never moves the robot | bridge |
-| **You** | remote in hand. **L2 + START = damping**, overrides everything | remote |
+| **You** | remote in hand. **L2 + B = damping**, overrides everything | remote |
 
 It is a *stop* system, not a planner: it never steers around anything. If
 something is in the way it stops and waits for you.
@@ -167,7 +167,7 @@ from **both** the LiDAR odometry and the IMU, IMU yaw rate, sport mode/gait/
 error code — and prints a report. **PASS** needs all of: response within
 0.5 s, at least half the commanded rotation while commanded, no swing over 5°
 after the stop, both heading sources within 8°, and still in the last 2 s.
-**If it keeps turning after the command ends, L2 + START.**
+**If it keeps turning after the command ends, L2 + B.**
 
 The two heading sources are what make a failure diagnosable: if they agree,
 the motion was real (lag, wrong mode); if they disagree, the LiDAR odometry
@@ -204,18 +204,18 @@ filter that, so the loop's protection is its own LiDAR stop.
 handheld remote**. The bridge therefore claims control only when it has
 motion to send, keeps it through pauses, and **hands it back to the remote**
 on watchdog, e-stop, damp and shutdown. Unitree does not document whether
-L2 + START still damps the robot while the API holds control.
+L2 + B still damps the robot while the API holds control.
 
 ### Gate — must pass before the avoid backend moves the robot (no motion)
 
 1. Robot standing, open floor, you on the remote.
 2. `bash tools/go2loop.sh avoid hold` — the API takes control. Nothing moves.
-3. **Press L2 + START.** Pass: the robot damps (goes limp / lies down) as it
+3. **Press L2 + B.** Pass: the robot damps (goes limp / lies down) as it
    normally would. Optionally push a stick gently first: with the API holding
    control it should *not* walk.
 4. `bash tools/go2loop.sh avoid release` — always, pass or fail.
 
-If L2 + START does **not** work while held, do not use `backend:=avoid`.
+If L2 + B does **not** work while held, do not use `backend:=avoid`.
 
 If it passes, Stage 1 can be repeated through the avoid path:
 ```bash
@@ -239,7 +239,7 @@ result: commands arriving, motion wrong. See [related-work.md](related-work.md).
 **The catch:** `SwitchJoystick(false)` makes the robot **ignore the remote's
 sticks**. The bridge sends it ~1.5 s after starting, and hands the sticks back
 (`SwitchJoystick(true)`) on watchdog, e-stop, damp and shutdown. Whether
-**L2 + START** still damps while the sticks are off isn't documented.
+**L2 + B** still damps while the sticks are off isn't documented.
 
 ### Gate — must pass before sport_prep moves the robot (no motion)
 
@@ -248,11 +248,11 @@ sticks**. The bridge sends it ~1.5 s after starting, and hands the sticks back
 3. Push a stick gently: the robot should **not** walk.
 4. In a second shell, `bash tools/go2loop.sh remote-keys`: buttons and sticks
    must **still be reported** (the remote start/abort depends on it). Ctrl-C.
-5. **Press L2 + START.** Pass: the robot damps as it normally would.
+5. **Press L2 + B.** Pass: the robot damps as it normally would.
 6. `bash tools/go2loop.sh joystick release`: always, pass or fail. Check
    that the sticks walk it again.
 
-If L2 + START doesn't work while held, **don't use `sport_prep`**.
+If L2 + B doesn't work while held, **don't use `sport_prep`**.
 
 If it passes, Stage 1 on this path (the PASS is recorded as `sport_prep`,
 separate from `sport`):
@@ -289,7 +289,7 @@ A completed 1 m run is recorded as the Stage 2 pass.
 
 Abort any time: **Ctrl-C** in that shell (safe shutdown: stop mission → bridge
 down, zero + hand back → loop down → close recording), `bash tools/go2loop.sh
-stop` from another shell, or **L2 + START** on the remote.
+stop` from another shell, or **L2 + B** on the remote.
 
 Then walk in front of it mid-leg: it must pause and stay paused until
 `bash tools/go2loop.sh resume` (from another shell).
@@ -308,7 +308,7 @@ builds the floorplan and prints the `scp` line to fetch it. Add
 
 Everything that keeps the robot safe runs on the robot: the obstacle stop,
 geofence, time limit, the bridge watchdog. The handheld remote is radio, so
-L2+START works anywhere. The cable is only needed to *set up* a run and for
+L2+B works anywhere. The cable is only needed to *set up* a run and for
 the live view. So: set up plugged in, unplug, start from the remote, and fetch
 the results afterwards.
 
@@ -318,7 +318,7 @@ but unverified on this remote. Also watch that the robot itself does nothing
 on SELECT+UP / SELECT+DOWN — if the firmware uses either, pick other combos
 (`remote_trigger.py --start/--abort`).
 ```bash
-bash tools/go2loop.sh remote-keys    # press SELECT+UP, SELECT+DOWN, L2+START; note msg/s
+bash tools/go2loop.sh remote-keys    # press SELECT+UP, SELECT+DOWN, L2+B; note msg/s
 ```
 The rate should be steady (the hold timer needs a continuous stream).
 
@@ -334,7 +334,7 @@ Unplug, hold SELECT+UP 1.5 s, watch nothing happen, plug back in:
 bash tools/demo.sh --length 3.0 --i-confirm-breathing --name classroom --remote-start --detach
 ```
 When it prints `SAFE TO UNPLUG`, unplug, and hold SELECT+UP to start.
-- **Abort:** SELECT+DOWN, L2+START (also damps), or *any stick* pushed past
+- **Abort:** SELECT+DOWN, L2+B (also damps), or *any stick* pushed past
   half way — so keep thumbs off the sticks unless you mean to take over.
 - **Paused** (something in the way): clear it, hold SELECT+UP to resume.
 - Not started within 10 min (`--wait`): it shuts itself down.

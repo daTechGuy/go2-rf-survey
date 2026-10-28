@@ -6,7 +6,7 @@
     python3 fake_remote.py press SELECT+UP 2     # hold a combo for 2 s, then release
     python3 fake_remote.py stick 0.9 1           # left stick forward 0.9 for 1 s
     python3 fake_remote.py interactive           # keys: u SELECT+UP, d SELECT+DOWN,
-                                                 # x L2+START, a L2+A, w stick fwd, q quit
+                                                 # x L2+B (damp), a L2+A, w stick fwd, q quit
 
 The real remote streams continuously (zeros when nothing is pressed); so
 does this. press/stick only write the shared state file that `serve` reads.
@@ -76,7 +76,7 @@ def serve() -> None:
 def interactive() -> None:
     print(__doc__.split("\n\n")[1] if "\n\n" in __doc__ else "", flush=True)
     actions = {"u": (combo("SELECT+UP"), 2.0), "d": (combo("SELECT+DOWN"), 0.5),
-               "x": (combo("L2+START"), 0.5), "a": (combo("L2+A"), 0.5)}
+               "x": (combo("L2+B"), 0.5), "a": (combo("L2+A"), 0.5)}
     old = termios.tcgetattr(sys.stdin)
     try:
         tty.setcbreak(sys.stdin.fileno())

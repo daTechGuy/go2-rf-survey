@@ -19,7 +19,7 @@ Gazebo Classic + CHAMP Go2 (anujjain-dev/unitree-go2-ros2, humble)
 
 | Tests for real | Does **not** test |
 |---|---|
-| The whole chain: preflight, turn test, bridge + watchdog, loop, obstacle stop, pauses, remote start/abort, `demo.sh --detach`, recording, floorplan, live view | Unitree's firmware: walking mode, `SwitchJoystick`, whether L2+START works while the API holds control, the camera service |
+| The whole chain: preflight, turn test, bridge + watchdog, loop, obstacle stop, pauses, remote start/abort, `demo.sh --detach`, recording, floorplan, live view | Unitree's firmware: walking mode, `SwitchJoystick`, whether L2+B works while the API holds control, the camera service |
 | Real ROS 2 / CycloneDDS between our container and "the robot" | Unitree's gait: CHAMP walks and turns differently (it drifts ~10 cm sideways turning in place) |
 | Whether a route fits a room (desks, aisles), before the robot tries it | The robot's LiDAR exactly: the sim's is a Velodyne patched to look down (−50…+15°) |
 

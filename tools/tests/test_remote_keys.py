@@ -98,8 +98,14 @@ class TestAbort(unittest.TestCase):
         self.assertEqual(ev, [(0.02, "abort")])
 
     def test_hard_stop_aborts_even_with_extras(self):
-        ev = run(RemoteTrigger(), [keys("L2", "START", "R1")] * 10)
+        # L2+B is the robot's damping stop (verified 2026-10-28)
+        ev = run(RemoteTrigger(), [keys("L2", "B", "R1")] * 10)
         self.assertEqual([e for _, e in ev], ["abort"])   # once, not every sample
+
+    def test_mode_toggle_also_aborts(self):
+        # L2+START doesn't damp the robot, but still means "operator wants control"
+        ev = run(RemoteTrigger(), [keys("L2", "START")] * 10)
+        self.assertEqual([e for _, e in ev], ["abort"])
 
     def test_stick_aborts(self):
         ev = run(RemoteTrigger(stick_abort=0.5), [(0, (0.0, 0.7, 0.0, 0.0))])

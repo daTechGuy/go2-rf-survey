@@ -11,7 +11,7 @@ Real robot interface (what our code uses)      <- from the sim
   /utlidar/robot_odom   (frame odom)            sim_odom_topic, re-framed
   /utlidar/cloud_deskewed (frame odom, 15 Hz)   sim_cloud_topic, moved into odom via TF
   /sportmodestate                               robot_model + odometry
-  /wirelesscontroller   (read: L2+START damps)  published by fake_remote.py
+  /wirelesscontroller   (read: L2+B damps)  published by fake_remote.py
 
 The sim's controller (CHAMP) must listen on ``sim_cmd_topic`` (default
 /sim/cmd_vel), NOT /cmd_vel: /cmd_vel is our loop -> bridge link, and the

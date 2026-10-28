@@ -65,7 +65,7 @@ int main(int argc, char** argv)
 
   std::cout << "[step_forward] iface=" << iface << "  vx=" << VX
             << " m/s for " << SECONDS << " s. Robot must be STANDING.\n"
-            << "Forward begins in 2 s. Ctrl-C here, or remote L2+START, to stop.\n";
+            << "Forward begins in 2 s. Ctrl-C here, or remote L2+B, to stop.\n";
   std::this_thread::sleep_for(seconds(2));
 
   auto t0 = steady_clock::now();
@@ -111,7 +111,7 @@ g++ -std=c++17 -O2 step_forward.cpp -o step_forward \
 3. `./step_forward eth0`
 4. It waits 2 s, creeps forward ~0.9 m over 3 s, stops, and stays standing.
 
-**Stops:** Ctrl-C in SSH (sends zero-velocity on exit) → or **L2 + START
+**Stops:** Ctrl-C in SSH (sends zero-velocity on exit) → or **L2 + B
 (damping)** on the remote, which overrides everything instantly.
 
 **Tuning:** `VX` (speed, m/s) and `SECONDS` (duration) are the two constants at

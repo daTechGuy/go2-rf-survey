@@ -9,7 +9,7 @@ against the sim unchanged. It is a *stand-in*, not Unitree's firmware:
     RecoveryStand, Move, SwitchJoystick, FreeWalk/ClassicWalk
   * obstacles_avoid: SwitchSet/Get, UseRemoteCommandFromApi, Move
   * motion_switcher CheckMode -> "normal"
-  * the remote: L2+START damps (always, as we assume the real one does),
+  * the remote: L2+B damps (always, as the real one does -- verified 2026-10-28),
     L2+A stands, sticks walk unless switched off or the API holds control
 
 Deliberate worst case: a Move holds until StopMove (``move_timeout_s=0``),
@@ -116,8 +116,8 @@ class RobotModel:
 
     # -------------------------------------------------------------- remote
     def remote(self, keys: int, lx: float, ly: float, rx: float, ry: float):
-        if _held(keys, "L2", "START"):
-            self._damp("remote L2+START")
+        if _held(keys, "L2", "B"):
+            self._damp("remote L2+B")
             return
         if _held(keys, "L2", "A"):
             self.damped, self.standing = False, True

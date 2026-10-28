@@ -18,7 +18,7 @@ Three backends:
 remote*. So the avoid backend claims control only when it actually has motion
 to send, and releases it -- handing the robot back to the remote -- on every
 stop that is not just a pause: watchdog, e-stop, damp, shutdown. Whether the
-remote's L2+START damping still works while the API holds control is not
+remote's L2+B damping still works while the API holds control is not
 documented; it must be verified on the robot before this backend moves it.
 
 * ``sport_prep`` -- sport-mode Move, preceded by the walk preparation that
@@ -32,7 +32,7 @@ documented; it must be verified on the robot before this backend moves it.
   for); BalanceStand is already sent by the bridge at startup. They never
   hand the sticks back; this backend does, with SwitchJoystick(true), on
   every release -- same claim/release discipline as ``avoid``. Whether
-  L2+START still damps while the sticks are switched off must be verified on
+  L2+B still damps while the sticks are switched off must be verified on
   the robot first (``go2loop.sh joystick hold``).
 """
 

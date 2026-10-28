@@ -33,21 +33,22 @@ built-in head LiDAR.
 
 | Buttons | What it does | |
 |---|---|---|
-| **L2 + START** | **Damping: the hard stop.** Legs go soft and the robot sinks down. Use it whenever anything looks wrong. | ✔ verified on this robot |
+| **L2 + B** (hold L2, press B) | **Damping: the hard stop.** Legs go soft and the robot sinks onto its belly. Use it whenever anything looks wrong. | ✔ verified on this robot, 2026-10-28 |
+| **L2 + START** | **Not a stop.** The robot stays standing (it seems to toggle a walking mode). Our software still treats it as "abort the route". | ✔ checked 2026-10-28 |
 | **L2 + A** | Stand up, **joint-locked** (stiff, will NOT walk) | ✔ verified |
 | **START** (one single press, after L2 + A) | **Walking mode**: the body gently sways, "breathing". The robot only obeys walk commands in this mode. A double press does **not** work. | ✔ verified |
 | Sticks | Walk / turn by hand (in walking mode) | standard |
-| **SELECT + UP**, held 1.5 s | Our software: **start** the route (or resume after a pause) | ⚠ check in guide 01, step G |
-| **SELECT + DOWN** | Our software: **abort** the route | ⚠ check in guide 01, step G |
+| **SELECT + UP**, held 1.5 s | Our software: **start** the route (or resume after a pause) | ✔ received, robot ignores it (2026-10-28) |
+| **SELECT + DOWN** | Our software: **abort** the route | ✔ received, robot ignores it (2026-10-28) |
 | Any stick pushed past halfway *during a route* | Our software: **abort** the route | ⚠ check in guide 01, step G |
-| Lie down from standing | Unitree's manual: **L2 + A** again from the locked stand. **L2 + START** also works (it just sinks less gracefully). | check on your remote |
+| Lie down from standing | Unitree's manual: **L2 + A** again from the locked stand. **L2 + B** also works (it goes limp, less gracefully). | check on your remote |
 
 **Power button** (robot battery and remote): **press once briefly, then press
 and hold about 2 seconds.** The same for on and for off.
 
 ## Safety rules (every session)
 
-1. **Remote on and in your hand before the robot is powered.** L2 + START is
+1. **Remote on and in your hand before the robot is powered.** L2 + B is
    the stop that always works, cable or no cable.
 2. **Nobody within 1.5 m of the robot** while it can walk. Kids, chairs, bags
    and cables out of the route.
@@ -92,4 +93,4 @@ laptop's key is installed on the robot.
 | `REFUSED: ... Stage 1` | No turn test passed today | Guide 01, step J |
 | `start refused` / `path blocked (front=..., near=...)` | Something within ~0.55 m of the robot | Move it, or move the robot to open floor |
 | `PAUSED` during a route | Something stepped in front, or a sensor went quiet | Clear the way, hold SELECT + UP to resume |
-| The robot does anything you didn't expect | — | **L2 + START.** Then note what happened. |
+| The robot does anything you didn't expect | — | **L2 + B.** Then note what happened. |

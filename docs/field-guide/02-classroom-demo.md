@@ -75,7 +75,7 @@ On the warm-up patch, 1.5 m clear around.
    bash tools/go2loop.sh turn-test --i-confirm-breathing
    bash tools/go2loop.sh bridge-down
    ```
-   The turn test must print **PASS**. If it keeps turning: **L2 + START**.
+   The turn test must print **PASS**. If it keeps turning: **L2 + B**.
    **FAIL → no demo walk today.** (Plan B, at the end of this guide.)
 
 ## H. Warm-up 2: the 1 m walk (as guide 01 L)
@@ -139,7 +139,7 @@ room: a good thing to put on the projector while you explain.
    - Someone steps in front → it **stops and waits**. That's the obstacle stop, a
      good thing to point out. Clear the way, hold **SELECT + UP**: it carries on.
    - To end it early: **SELECT + DOWN**.
-   - Anything unexpected: **L2 + START.**
+   - Anything unexpected: **L2 + B.**
 7. [ ] When it's back and stopped, wait a minute (it builds the floorplan),
    lie it down, plug the cable back in.
 

@@ -11,7 +11,7 @@ release = SwitchJoystick {"data": true}:  the sticks work again.
 
 Sends NO motion. This is the zero-motion safety gate for the bridge's
 ``sport_prep`` backend, which switches the sticks off while driving: hold,
-then check on the remote that L2+START still damps the robot (and, with
+then check on the remote that L2+B still damps the robot (and, with
 ``go2loop.sh remote-keys``, that the buttons are still reported), then
 release. Always release afterwards.
 
@@ -53,7 +53,7 @@ def main(argv) -> int:
         if code != 0:
             print(f"{cmd}: refused, error code {code} {data}")
             return 1
-        print("sticks OFF -- the robot ignores them. Test L2+START, then run 'release'."
+        print("sticks OFF -- the robot ignores them. Test L2+B, then run 'release'."
               if not sticks_on else "sticks ON -- handed back to the remote")
         return 0
     finally:

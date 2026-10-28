@@ -29,7 +29,7 @@ REAL_HOME="$HOME"
 PASS=0; FAILS=0; FAILED=()
 SEL=" $* "
 
-START=0x1008; ABORT=0x4008; HARDSTOP=0x0024
+START=0x1008; ABORT=0x4008; HARDSTOP=0x0220    # L2+B
 
 fresh() {
   pkill -f remote_trigger.py 2>/dev/null
@@ -126,7 +126,7 @@ if scenario 3 "rehearsal: a stick aborts"; then
   showif "$f0"
 fi
 
-if scenario 4 "rehearsal: L2+START aborts"; then
+if scenario 4 "rehearsal: L2+B aborts"; then
   echo "== $CUR"; fresh 4; f0=$FAILS
   demo --length 1.0 --rehearse --remote-start --detach
   hold $START 2.2; /usr/bin/sleep 1.5; hold $HARDSTOP 0.5

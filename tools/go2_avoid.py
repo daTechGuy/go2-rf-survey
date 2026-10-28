@@ -12,7 +12,7 @@ Runs inside the go2-survey:humble container (needs unitree_api):
 hold / release: UseRemoteCommandFromApi(true/false) (api 1004) -- the API
 takes control from the handheld remote, WITHOUT sending any motion. This is
 the zero-motion safety gate for the bridge's avoid backend: hold, then check
-on the remote that L2+START still damps the robot, then release. Always
+on the remote that L2+B still damps the robot, then release. Always
 release afterwards; until then the remote's sticks may be ignored.
 
 Talks to the robot's ``obstacles_avoid`` service over
@@ -104,7 +104,7 @@ def main(argv) -> int:
                 print(f"{cmd}: {describe(r)}")
                 return 1
             print("API now HOLDS control -- remote sticks may be ignored. "
-                  "Test L2+START, then run 'release'." if hold
+                  "Test L2+B, then run 'release'." if hold
                   else "control handed back to the handheld remote")
             return 0
         if cmd != "get":

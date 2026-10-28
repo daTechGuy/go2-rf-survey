@@ -55,7 +55,7 @@ the robot is live.
    way is fine:
    - still lying down: good, leave it;
    - stood up: you can leave it standing, or lie it down (controls card).
-4. [ ] Hold the remote from now on. **L2 + START** is your stop.
+4. [ ] Hold the remote from now on. **L2 + B** is your stop.
 
 ## D. Connect the laptop
 
@@ -142,7 +142,7 @@ step shows exactly what the robot receives. **Nothing in this step can make it w
    |---|---|---|
    | SELECT + UP (D-pad up) | `keys=0x1008 SELECT+UP` | [ ] |
    | SELECT + DOWN | `keys=0x4008 DOWN+SELECT` | [ ] |
-   | L2 + START | `keys=0x0024 L2+START` | [ ] |
+   | L2 + B (robot lying down: it just stays down) | `keys=0x0220 L2+B` | [ ] |
    | Push the left stick forward | `sticks lx,ly,rx,ry=(0.0, 0.x, ...)` | [ ] |
    | (rate line) | `(NNN msg/s)`, a steady number, not 0 | [ ] |
 
@@ -200,7 +200,7 @@ The first time the software moves the robot. It turns slowly in place for
 turn won't wrap it.
 
 1. [ ] Still breathing (the sway from I3). If it stopped, L2 + A then a single START again.
-2. [ ] Remote in hand, thumb near **L2 + START**. Everyone 1.5 m back.
+2. [ ] Remote in hand, thumb near **L2 + B**. Everyone 1.5 m back.
 3. [ ] On the **robot**:
    ```bash
    bash tools/go2loop.sh bridge-up
@@ -212,7 +212,7 @@ turn won't wrap it.
    bash tools/go2loop.sh turn-test --i-confirm-breathing
    ```
    **Watch:** it turns slowly to the left about 20°, then stops and stays stopped.
-   **If it keeps turning or swings after stopping: L2 + START.**
+   **If it keeps turning or swings after stopping: L2 + B.**
 5. [ ] Read the report it prints. It ends **PASS** or **FAIL** with the reasons.
 6. [ ] Always, pass or fail:
    ```bash
@@ -242,7 +242,7 @@ with nothing moving, that your hard stop still works.
    second SSH window (`ssh go2`, `cd ~/go2-rf-survey`), run
    `bash tools/go2loop.sh remote-keys` and press SELECT + UP: it must still
    print `SELECT+UP` (the remote start depends on it). Ctrl-C.
-4. [ ] **Press L2 + START.** It must sink down (damp) as usual. **Write down
+4. [ ] **Press L2 + B.** It must sink down (damp) as usual. **Write down
    yes/no.**
 5. [ ] Always, whatever happened:
    ```bash
@@ -257,7 +257,7 @@ with nothing moving, that your hard stop still works.
    ```
    **PASS:** in steps L and M, add `--backend sport_prep` to every `demo.sh`
    command. While those walks run, the sticks are off: the stop is
-   **L2 + START** or **SELECT + DOWN**.
+   **L2 + B** or **SELECT + DOWN**.
 
 ## K. Rehearse the untethered run: nothing moves
 
@@ -324,7 +324,7 @@ and stops. **It walks on its own; your job is to watch and be ready.**
 7. [ ] **Watch.** It walks slowly to the far strip (~0.3 m/s), stops, turns
    round on the spot in **one** direction, walks back, and stops near the
    start. 20–40 seconds in all. Then it stands breathing.
-   - Anything unexpected → **L2 + START.**
+   - Anything unexpected → **L2 + B.**
    - It stops and waits mid-route → it saw something within half a metre.
      Clear it, then hold SELECT + UP to resume.
 8. [ ] It keeps working for about a minute after stopping: it closes the
@@ -396,11 +396,11 @@ Date:
 Step reached (A–O):
 E3 preflight last line:
 G  remote-keys:   SELECT+UP -> ______   SELECT+DOWN -> ______
-                  L2+START  -> ______   rate ____ msg/s
+                  L2+B  -> ______   rate ____ msg/s
                   robot reacted to SELECT+UP/DOWN? yes / no
 I5 mode:          name=______
 J  turn-test:     PASS / FAIL   (paste the report)
-J2 sticks held:   stick walked it? yes / no   L2+START damped? yes / no
+J2 sticks held:   stick walked it? yes / no   L2+B damped? yes / no
    turn-test sport_prep: PASS / FAIL / not run
 K  rehearsal:     results line: ______   abort: ______   stick: ______
 L  1 m walk:      results line: ______

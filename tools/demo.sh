@@ -11,7 +11,7 @@
 # Untethered (no laptop cable during the run):
 #   --remote-start  don't start right away: wait (up to --wait S, default 600)
 #                   for SELECT+UP held 1.5 s on the handheld remote. Same combo
-#                   resumes after a pause. SELECT+DOWN, L2+START or pushing a
+#                   resumes after a pause. SELECT+DOWN, L2+B or pushing a
 #                   stick aborts the route. Check the buttons first, read-only:
 #                   bash tools/go2loop.sh remote-keys
 #   --detach        checks + preflight run here, then the demo carries on in
@@ -191,7 +191,7 @@ if [ "$REMOTE" = 1 ]; then
   $G remote-up || bail "remote trigger did not start"
   seen=$(wc -l < "$HOME/surveys/go2remote.log")   # remote-up already showed these
   echo "== $(ts) WAITING FOR THE REMOTE: hold SELECT+UP 1.5 s to start (up to ${WAIT} s)"
-  echo "   abort any time: SELECT+DOWN, L2+START, or push a stick"
+  echo "   abort any time: SELECT+DOWN, L2+B, or push a stick"
   wait_end=$(( $(date +%s) + WAIT ))
   while :; do
     show_remote

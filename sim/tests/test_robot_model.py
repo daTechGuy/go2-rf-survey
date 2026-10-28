@@ -79,13 +79,13 @@ class TestRemote(unittest.TestCase):
         m.sport(SWITCH_JOYSTICK, json.dumps({"data": False}), 0.0)
         m.avoid(AV_USE_REMOTE, json.dumps({"is_remote_commands_from_api": True}), 0.0)
         m.sport(MOVE, mv(0.3), 0.0)
-        m.remote(keys("L2", "START"), 0, 0, 0, 0)
+        m.remote(keys("L2", "B"), 0, 0, 0, 0)
         self.assertTrue(m.damped)
         self.assertEqual(m.command(0.0), (0.0, 0.0, 0.0))
 
     def test_l2_a_stands_again(self):
         m = RobotModel()
-        m.remote(keys("L2", "START"), 0, 0, 0, 0)
+        m.remote(keys("L2", "B"), 0, 0, 0, 0)
         m.remote(keys("L2", "A"), 0, 0, 0, 0)
         self.assertFalse(m.damped)
 
