@@ -21,6 +21,7 @@ SUITES = [
     "go2_survey_wifi/test/test_scanner.py",
     "tools/tests/test_fov_geometry.py",
     "tools/tests/test_turn_analysis.py",
+    "tools/tests/test_gait_analysis.py",
     "tools/tests/test_readiness.py",
     "tools/tests/test_trail.py",
     "tools/tests/test_stage_gate.py",

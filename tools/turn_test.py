@@ -42,6 +42,7 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gait_analysis import FOOT_FIELDS, foot_row, format_steps, steps_between  # noqa: E402
 from turn_analysis import MOVE, STOP_MOVE, analyse, format_report, passed  # noqa: E402
 from unitree_rpc import UnitreeRpc, check_mode  # noqa: E402
 
@@ -54,7 +55,7 @@ except ImportError as exc:  # pragma: no cover - environment
 
 MAX_VYAW, MAX_SECONDS = 0.3, 3.0
 FIELDS = ["t", "phase", "cmd", "api", "odom_yaw", "imu_yaw", "yaw_speed",
-          "mode", "gait_type", "error_code"]
+          "mode", "gait_type", "error_code"] + FOOT_FIELDS
 
 
 def yaw_of(q) -> float:
@@ -137,6 +138,7 @@ class Probe(Node):
             "mode": None if s is None else int(s.mode),
             "gait_type": None if s is None else int(s.gait_type),
             "error_code": None if s is None else int(s.error_code),
+            **foot_row(s),
         }
 
 
@@ -239,6 +241,10 @@ def main() -> int:
         print(f"log: {out} ({len(rows)} rows)\n")
         report = analyse(rows)
         print(format_report(report))
+        if report.cmd_start is not None:
+            # informational, not a pass criterion: did the gait actually run?
+            print(format_steps(steps_between(rows, report.cmd_start,
+                                             (report.cmd_end or rows[-1]["t"]) + 0.5)))
         ok = passed(report)
         if ok:
             # demo.sh will not drive live without a recent Stage 1 pass on the
