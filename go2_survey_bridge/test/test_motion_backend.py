@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from go2_survey_bridge.motion_backend import (  # noqa: E402
     AVOID, AVOID_MOVE, AVOID_SWITCH_SET, AVOID_USE_REMOTE_COMMAND_FROM_API,
     SPORT, SPORT_FREE_WALK, SPORT_MOVE, SPORT_STOP_MOVE, SPORT_SWITCH_JOYSTICK,
-    AvoidBackend, SportBackend, SportPrepBackend, make_backend,
+    AvoidBackend, SportBackend, SportPrepBackend, is_stream, make_backend,
 )
 
 
@@ -155,6 +155,24 @@ class TestSportPrep(unittest.TestCase):
         b.release()
         self.assertEqual([r[1] for r in b.move(0.1, 0, 0)][:2],
                          [SPORT_SWITCH_JOYSTICK, SPORT_FREE_WALK])
+
+
+class TestStream(unittest.TestCase):
+    """Only the continuous Move stream goes fire-and-forget (noreply)."""
+
+    def test_sport_move_is_stream(self):
+        self.assertTrue(is_stream(SPORT, SPORT_MOVE))
+
+    def test_one_offs_want_replies(self):
+        for svc, api in [(SPORT, SPORT_STOP_MOVE), (SPORT, SPORT_SWITCH_JOYSTICK),
+                         (SPORT, SPORT_FREE_WALK), (SPORT, 1002),
+                         (AVOID, AVOID_MOVE), (AVOID, AVOID_SWITCH_SET)]:
+            self.assertFalse(is_stream(svc, api), (svc, api))
+
+    def test_every_backends_stop_wants_a_reply(self):
+        for name in ("sport", "avoid", "sport_prep"):
+            for svc, api, _ in make_backend(name).release():
+                self.assertFalse(is_stream(svc, api), (name, api))
 
 
 class TestFactory(unittest.TestCase):

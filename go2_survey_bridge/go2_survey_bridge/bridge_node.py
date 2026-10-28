@@ -23,6 +23,8 @@ sends it on startup unless ``auto_balance_stand`` is false.
 
 from __future__ import annotations
 
+import time
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
@@ -33,7 +35,7 @@ from std_srvs.srv import Trigger
 
 from go2_survey_bridge import sport_api
 from go2_survey_bridge.limits import Limits, Velocity, VelocityLimiter, Watchdog
-from go2_survey_bridge.motion_backend import AVOID, SPORT, make_backend
+from go2_survey_bridge.motion_backend import AVOID, SPORT, is_stream, make_backend
 
 try:
     from unitree_api.msg import Request, Response
@@ -72,8 +74,13 @@ class CmdVelBridge(Node):
         # SwitchJoystick(false) + FreeWalk, which switches the remote's
         # sticks off while driving. See motion_backend.py before using either.
         self.declare_parameter("backend", "sport")
+        # Send Move fire-and-forget (header.policy.noreply), as Unitree's own
+        # clients do. Until 2026-10-28 every Move asked for a reply; firmware
+        # 'mcf' then delivered only 8-40% of the commanded turn rate.
+        self.declare_parameter("move_noreply", True)
 
         g = self.get_parameter
+        self.move_noreply = bool(g("move_noreply").value)
         self.backend = make_backend(str(g("backend").value))
         self.limits = Limits(
             max_vx=g("max_vx").value,
@@ -89,7 +96,8 @@ class CmdVelBridge(Node):
 
         self._target = Velocity()
         self._estop = False
-        self._request_id = 0
+        # Unique across bridge restarts (Unitree's clients use clock-based ids).
+        self._request_id = int(time.time() * 1000) % 2**31
         self._last_tick: float | None = None
         self._sent_stop = False
 
@@ -148,7 +156,7 @@ class CmdVelBridge(Node):
             f"{target} at {rate:.0f} Hz, backend={self.backend.name}\n"
             f"  limits vx={self.limits.max_vx} vy={self.limits.max_vy} "
             f"vyaw={self.limits.max_vyaw}\n"
-            f"  watchdog {self.watchdog.timeout_s}s"
+            f"  watchdog {self.watchdog.timeout_s}s, move_noreply={self.move_noreply}"
         )
 
     # ------------------------------------------------------------- plumbing
@@ -160,6 +168,7 @@ class CmdVelBridge(Node):
         msg = Request()
         msg.header.identity.id = self._request_id
         msg.header.identity.api_id = api_id
+        msg.header.policy.noreply = self.move_noreply and is_stream(service, api_id)
         msg.parameter = parameter
         self.service_pubs[service].publish(msg)
         self._request_id += 1
@@ -251,7 +260,7 @@ class CmdVelBridge(Node):
                     f"state={state} vx={v.vx:.3f} vy={v.vy:.3f} "
                     f"vyaw={v.vyaw:.3f} estop={self._estop} "
                     f"watchdog_trips={self.watchdog.trip_count} "
-                    f"backend={self.backend.name}"
+                    f"backend={self.backend.name} move_noreply={self.move_noreply}"
                 )
             )
         )

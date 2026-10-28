@@ -184,6 +184,38 @@ def passed(report: TurnReport) -> bool:
         not any(b in v for v in report.verdicts for b in bad)
 
 
+def summarize_replies(sent: dict, replies: list) -> list:
+    """What the robot answered to each request the bridge sent.
+
+    sent:    {request id: (t, api_id, noreply)}   from /api/sport/request
+    replies: [(t, request id, api_id, code)]      from /api/sport/response
+    Returns report lines, one per api: how many sent, how many answered, the
+    status codes (0 = accepted) and the median reply delay. A request sent
+    with noreply is expected to get none; a code other than 0 is the robot
+    saying why it did not do what was asked.
+    """
+    lines = []
+    for api in sorted({a for _, a, _ in sent.values()}):
+        ids = {i for i, (_, a, _) in sent.items() if a == api}
+        quiet = sum(1 for i in ids if sent[i][2])
+        mine = [r for r in replies if r[1] in ids]
+        codes = {}
+        for r in mine:
+            codes[r[3]] = codes.get(r[3], 0) + 1
+        delays = sorted(r[0] - sent[r[1]][0] for r in mine)
+        name = {MOVE: "Move", STOP_MOVE: "StopMove"}.get(api, f"api {api}")
+        line = f"robot replies, {name:<8}: sent {len(ids)}"
+        if quiet:
+            line += f" ({quiet} with noreply)"
+        line += f", answered {len(mine)}"
+        if codes:
+            line += ", codes " + ", ".join(f"{c}x{n}" for c, n in sorted(codes.items()))
+        if delays:
+            line += f", median delay {1000 * delays[len(delays) // 2]:.0f} ms"
+        lines.append(line)
+    return lines or ["robot replies: no requests seen"]
+
+
 def format_report(r: TurnReport) -> str:
     f = lambda v, u="deg": "n/a" if v is None else f"{v:.1f} {u}"  # noqa: E731
     lines = [

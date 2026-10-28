@@ -16,7 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from turn_analysis import MOVE, STOP_MOVE, analyse, format_report, passed  # noqa: E402
+from turn_analysis import (MOVE, STOP_MOVE, analyse, format_report, passed,  # noqa: E402
+                           summarize_replies)
 
 DT = 0.02          # 50 Hz logger
 VYAW = 0.2
@@ -149,6 +150,32 @@ class TestScenarios(unittest.TestCase):
     def test_report_is_printable(self):
         text = format_report(analyse(synth(prompt)))
         self.assertIn("STAGE 1: PASS", text)
+
+
+class TestReplies(unittest.TestCase):
+    def test_counts_codes_and_delay(self):
+        sent = {i: (0.02 * i, MOVE, False) for i in range(10)}
+        sent[99] = (0.5, STOP_MOVE, False)
+        replies = [(0.02 * i + 0.010, i, MOVE, 0) for i in range(8)]
+        replies += [(0.02 * 8 + 0.030, 8, MOVE, 3104)]          # one refused
+        replies += [(0.51, 99, STOP_MOVE, 0)]
+        lines = summarize_replies(sent, replies)
+        self.assertIn("Move    : sent 10, answered 9, codes 0x8, 3104x1", lines[1])
+        self.assertIn("median delay 10 ms", lines[1])
+        self.assertIn("StopMove: sent 1, answered 1, codes 0x1", lines[0])
+
+    def test_noreply_requests_noted(self):
+        sent = {i: (0.02 * i, MOVE, True) for i in range(5)}
+        line = summarize_replies(sent, [])[0]
+        self.assertIn("sent 5 (5 with noreply), answered 0", line)
+
+    def test_replies_to_other_requests_ignored(self):
+        sent = {1: (0.0, MOVE, False)}
+        line = summarize_replies(sent, [(0.1, 42, MOVE, 0)])[0]
+        self.assertIn("answered 0", line)
+
+    def test_nothing_sent(self):
+        self.assertEqual(summarize_replies({}, []), ["robot replies: no requests seen"])
 
 
 if __name__ == "__main__":

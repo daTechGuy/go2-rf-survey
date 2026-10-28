@@ -43,11 +43,12 @@ from std_msgs.msg import String
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gait_analysis import FOOT_FIELDS, foot_row, format_steps, steps_between  # noqa: E402
-from turn_analysis import MOVE, STOP_MOVE, analyse, format_report, passed  # noqa: E402
+from turn_analysis import (MOVE, STOP_MOVE, analyse, format_report, passed,  # noqa: E402
+                           summarize_replies)
 from unitree_rpc import UnitreeRpc, check_mode  # noqa: E402
 
 try:
-    from unitree_api.msg import Request
+    from unitree_api.msg import Request, Response
     from unitree_go.msg import SportModeState
 except ImportError as exc:  # pragma: no cover - environment
     raise SystemExit("needs unitree_api/unitree_go: run inside the go2-survey:humble "
@@ -77,6 +78,9 @@ class Probe(Node):
         self.create_subscription(SportModeState, "/sportmodestate", self._on_sport,
                                  qos_profile_sensor_data)
         self.create_subscription(Request, "/api/sport/request", self._on_request, 50)
+        # The robot's answer to each request: status code 0 = accepted.
+        self.sent, self.replies = {}, []    # see turn_analysis.summarize_replies
+        self.create_subscription(Response, "/api/sport/response", self._on_response, 50)
         # The bridge's avoid backend drives through obstacles_avoid instead.
         self.create_subscription(Request, "/api/obstacles_avoid/request",
                                  self._on_avoid_request, 50)
@@ -98,6 +102,8 @@ class Probe(Node):
 
     def _on_request(self, m):
         api = int(m.header.identity.api_id)
+        self.sent[int(m.header.identity.id)] = (time.monotonic(), api,
+                                                bool(m.header.policy.noreply))
         if api not in (MOVE, STOP_MOVE):
             return            # BalanceStand, sport_prep's SwitchJoystick/FreeWalk: not motion
         self.api = api
@@ -109,6 +115,10 @@ class Probe(Node):
                 self.cmd = float("nan")
         elif api == STOP_MOVE:
             self.cmd = 0.0
+
+    def _on_response(self, m):
+        self.replies.append((time.monotonic(), int(m.header.identity.id),
+                             int(m.header.identity.api_id), int(m.header.status.code)))
 
     def _on_avoid_request(self, m):
         # obstacles_avoid Move is api 1003 -- the SAME number as sport
@@ -247,6 +257,8 @@ def main() -> int:
             # informational, not a pass criterion: did the gait actually run?
             print(format_steps(steps_between(rows, report.cmd_start,
                                              (report.cmd_end or rows[-1]["t"]) + 0.5)))
+        for line in summarize_replies(p.sent, p.replies):
+            print(line)
         ok = passed(report)
         if ok:
             # demo.sh will not drive live without a recent Stage 1 pass on the

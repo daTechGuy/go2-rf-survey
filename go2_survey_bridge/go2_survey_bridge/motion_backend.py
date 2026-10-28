@@ -153,6 +153,15 @@ class SportPrepBackend(SportBackend):
         return out
 
 
+def is_stream(service: str, api_id: int) -> bool:
+    """Requests sent continuously at the bridge rate (sport Move). Unitree's
+    own clients send these fire-and-forget -- header.policy.noreply = True,
+    a fresh time-based id each -- e.g. unitree_webrtc_connect's MCF example
+    ("Move uses this -- no response is awaited", after unitree_webrtc_sdk's
+    _CallNoReplyBase). Everything else is a one-off that wants an answer."""
+    return service == SPORT and api_id == SPORT_MOVE
+
+
 BACKENDS = ("sport", "avoid", "sport_prep")
 
 
