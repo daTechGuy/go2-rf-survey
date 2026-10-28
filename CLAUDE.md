@@ -25,19 +25,25 @@ survey waits for it.
 | 03 Mount and TF | 🟨 mounted nose-down; exact pitch still to measure for URDF |
 | 04 SLAM | 🟨 config written; mapping meanwhile = built-in `/utlidar/*` + `tools/bag_to_map.py` |
 | 05 **WiFi survey** | ✅ written + tested — the deliverable (deferred) |
-| 06 Velocity bridge | 🟨 watchdog fired on time on the robot; **Stage 1 turn test FAILED once (2026-10-21), cause unknown** |
+| 06 Velocity bridge | 🟨 watchdog stops it cleanly; **Stage 1 turn test FAILS: robot twists, gait never starts (2026-10-28)** |
 | 07 Depth and costmaps | 🟨 D435i present on USB (`8086:0b3a`); not brought up |
 | 08 Nav2 | ⬜ (later: go2_ros2_sdk) |
 | — Autonomous loop | ✅ dry run on the robot; live stages gated (`tools/stage_gate.py`) |
 
-Built since the last robot session, **not yet run on the robot**: preflight,
-live view (Foxglove; image needs a rebuild), `tools/demo.sh`, remote
-start/abort + untethered runs. All pass the fake robot.
+Run on the robot 2026-10-28: preflight, image build, live view + camera,
+remote-keys. **Not yet run on the robot:** `tools/demo.sh`, untethered runs,
+`state-watch`. All pass the fake robot / sim.
 
-**Next action:** the user runs
-[`docs/field-guide/01-small-room-test.md`](docs/field-guide/01-small-room-test.md)
-on the robot. Ask for its record sheet. The order matters: remote-key check
-(read-only), mode check, then Stage 1 before anything walks. Robot-side
+**Session 2026-10-28 (guide 01, reached step J):** remote keys verified;
+image rebuilt; camera works; motion mode is `mcf` (firmware 1.1.6+ name for
+`normal`, accepted). **The stop is L2+B, not L2+START** (fixed everywhere).
+Turn test failed 3× by under-response: prompt start, clean stop, but a twist
+on planted feet with `/sportmodestate` mode=0 gait=0 — the gait never ran.
+
+**Next action:** [`docs/field-guide/03-turn-diagnosis.md`](docs/field-guide/03-turn-diagnosis.md):
+`state-watch` while the user stick-walks (read-only), then [ASK] turn test
+with `auto_balance_stand:=false`, then [ASK] J2 `sport_prep`. The turn test
+now prints whether the feet stepped (`tools/gait_analysis.py`). Robot-side
 state that resets each boot: `sudo ip route replace default via
 192.168.123.222 dev eth0` (user runs sudo).
 
