@@ -17,7 +17,7 @@ It REFUSES to command anything unless all of these hold:
   * --i-confirm-breathing is given. The robot must be in walking mode -- on the
     remote, L2+A then a SINGLE START, body visibly balancing ("breathing").
     The first Stage 1 run skipped this check; this flag exists because of it.
-  * |vyaw| <= 0.3 rad/s and seconds <= 3.0 (hard caps, not defaults)
+  * |vyaw| <= 0.5 rad/s and seconds <= 3.0 (hard caps, not defaults)
   * odometry and /sportmodestate are live, and the bridge is subscribed
   * the robot is not already rotating
 It never sends a zero to end the test: stopping is the watchdog's job, which
@@ -53,7 +53,9 @@ except ImportError as exc:  # pragma: no cover - environment
     raise SystemExit("needs unitree_api/unitree_go: run inside the go2-survey:humble "
                      "container and `source /opt/unitree_msgs/setup.bash`") from exc
 
-MAX_VYAW, MAX_SECONDS = 0.3, 3.0
+# 0.5 = the bridge's own vyaw limit. Raised from 0.3 on 2026-10-28: firmware
+# 'mcf' gave ~0.1 rad/s for a 0.3 command, while the sticks turned it at 1.9.
+MAX_VYAW, MAX_SECONDS = 0.5, 3.0
 FIELDS = ["t", "phase", "cmd", "api", "odom_yaw", "imu_yaw", "yaw_speed",
           "mode", "gait_type", "error_code"] + FOOT_FIELDS
 
