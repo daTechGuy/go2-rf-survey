@@ -190,7 +190,8 @@ can be changed in the software once we know what your remote sends.
    ```bash
    bash tools/go2loop.sh mode
    ```
-   You want `name='normal'`. **Anything else: stop here** and note it.
+   You want `name='mcf'` (this robot's firmware) or `name='normal'` (older
+   firmware's name for the same mode). **Anything else: stop here** and note it.
 
 ## J. Stage 1: the turn test (the robot turns about 20° on the spot)
 

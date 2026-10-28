@@ -64,6 +64,12 @@ class TestVerdicts(unittest.TestCase):
         self.assertFalse(motion)
         self.assertTrue(any("'ai'" in l and "blocks motion" in l for l in lines))
 
+    def test_mcf_mode_is_motion_ready(self):
+        # firmware 1.1.6+ names the normal walking mode 'mcf' (robot, 2026-10-28)
+        sensing, motion, lines = assess(with_(mode_name="mcf"))
+        self.assertTrue(sensing and motion)
+        self.assertEqual(fails(lines), [])
+
     def test_silent_switcher_blocks_motion_only(self):
         sensing, motion, _ = assess(with_(mode_name=None))
         self.assertTrue(sensing)

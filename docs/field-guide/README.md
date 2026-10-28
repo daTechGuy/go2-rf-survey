@@ -88,7 +88,7 @@ laptop's key is installed on the robot.
 | preflight `WARN no internet` | The robot's internet route is gone (it resets at every boot) | `sudo ip route replace default via 192.168.123.222 dev eth0` |
 | preflight `FAIL image is older than docker/` | Code changed since the last build | `bash tools/go2loop.sh build` (needs internet) |
 | preflight `motion: NOT READY` ... `not standing` | Robot lying down | Remote: L2 + A, then a single START |
-| `motion mode '...', not 'normal'` | Robot in a mode that may ignore walk commands | Stop. Note the mode name and ask before going on. |
+| `motion mode '...', not 'normal'/'mcf'` | Robot in a mode that may ignore walk commands | Stop. Note the mode name and ask before going on. |
 | `REFUSED: ... Stage 1` | No turn test passed today | Guide 01, step J |
 | `start refused` / `path blocked (front=..., near=...)` | Something within ~0.55 m of the robot | Move it, or move the robot to open floor |
 | `PAUSED` during a route | Something stepped in front, or a sensor went quiet | Clear the way, hold SELECT + UP to resume |

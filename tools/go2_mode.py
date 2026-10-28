@@ -5,7 +5,8 @@
 
 Asks the robot's motion_switcher service (CheckMode, api 1001). Sport-mode
 commands -- what go2_survey_bridge sends -- are documented to be honoured
-only in mode "normal". An empty name means no motion service holds the robot.
+only in mode "normal", which firmware 1.1.6+ calls "mcf". An empty name means
+no motion service holds the robot.
 
 Deliberately no select/release here: those hand control of the legs between
 services and are not something to do casually.
@@ -33,8 +34,9 @@ def main() -> int:
             return 1
         name, form = mode
         print(f"motion mode: name='{name}' form='{form}'")
-        if name != "normal":
-            print("note: sport-mode Move (go2_survey_bridge) is documented for mode 'normal'")
+        if name not in ("normal", "mcf"):
+            print("note: sport-mode Move (go2_survey_bridge) is documented for mode "
+                  "'normal' ('mcf' on firmware 1.1.6+)")
         return 0
     finally:
         node.destroy_node()

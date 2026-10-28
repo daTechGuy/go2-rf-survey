@@ -18,6 +18,10 @@ from __future__ import annotations
 ODOM_MIN_HZ = 50.0          # robot publishes ~150 Hz
 CLOUD_MIN_HZ = 8.0          # robot publishes ~15 Hz
 STANDING_MIN_HEIGHT = 0.25  # m; ~0.32 standing, much lower lying down
+# motion_switcher names for the mode that honours sport Move: 'normal' on
+# older firmware, 'mcf' (the main motion service) from firmware 1.1.6. Our
+# robot reported 'mcf' on 2026-10-28; same api ids per unitree_sdk2 sport_api.hpp.
+MOTION_MODES = ("normal", "mcf")
 
 
 def assess(s: dict):
@@ -61,10 +65,10 @@ def assess(s: dict):
     mode = s.get("mode_name")
     if mode is None:
         fail("motion_switcher did not answer CheckMode", motion_only=True)
-    elif mode == "normal":
-        ok("motion mode 'normal' (sport Move honoured)")
+    elif mode in MOTION_MODES:
+        ok(f"motion mode {mode!r} (sport Move honoured)")
     else:
-        fail(f"motion mode {mode!r}, not 'normal' -- sport Move may be ignored",
+        fail(f"motion mode {mode!r}, not 'normal'/'mcf' -- sport Move may be ignored",
              motion_only=True)
 
     avoid = s.get("avoid_enabled")

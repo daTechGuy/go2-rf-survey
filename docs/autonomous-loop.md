@@ -142,7 +142,7 @@ All on the robot host (`unitree@ubuntu`):
    the first-run note below.
 2. Check which motion mode owns the legs (read-only):
    ```bash
-   bash tools/go2loop.sh mode          # want: name='normal'
+   bash tools/go2loop.sh mode          # want: name='mcf' (firmware 1.1.6+) or 'normal'
    ```
    Sport-mode `Move` — what the bridge sends — is documented to be honoured
    only in mode `normal`. The turn test refuses in any other mode unless you

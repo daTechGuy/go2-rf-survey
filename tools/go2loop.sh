@@ -17,7 +17,7 @@
 #   bash tools/go2loop.sh build        (re)build the image, stamped so preflight
 #                                      can tell when it is out of date
 #   bash tools/go2loop.sh mode         which motion mode owns the legs (read-only;
-#                                      sport Move needs 'normal')
+#                                      sport Move needs 'normal'/'mcf')
 #   bash tools/go2loop.sh avoid get|on|off|hold|release
 #                                      Unitree's built-in obstacle avoidance;
 #                                      hold/release = API takes/returns control

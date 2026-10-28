@@ -70,7 +70,7 @@ On the warm-up patch, 1.5 m clear around.
 2. [ ] Robot:
    ```bash
    bash tools/go2loop.sh preflight          # last line: motion: READY
-   bash tools/go2loop.sh mode               # name='normal'
+   bash tools/go2loop.sh mode               # name='mcf' (or 'normal')
    bash tools/go2loop.sh bridge-up
    bash tools/go2loop.sh turn-test --i-confirm-breathing
    bash tools/go2loop.sh bridge-down
