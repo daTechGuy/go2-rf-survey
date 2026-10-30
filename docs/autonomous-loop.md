@@ -349,6 +349,19 @@ done — 8, 4 and 8 legs, home within 0.12–0.14 m. The first version stalled i
 one layout: legs ended with a chair inside the turn ring, hence the 0.8 m
 end clearance.
 
+**On the robot, first run (2026-10-31):** done, 8 legs, whole classroom
+mapped, home within 0.16 m — but it **brushed a podium and a desk**, from the
+front and with the rear swinging round in a turn. So exploring now uses
+wider stops (ring 0.70, stop 0.7 m, lane 0.45, set by `demo.sh --explore`),
+plans from ~2 s of scans, keeps 0.75 m beside its path, 1.1 m round each stop
+and 1.3 m short of anything ahead. And a **turn memory** (routes too): obstacle
+points from the last 10 s — the robot's own legs dropped first — and a turn
+on the spot waits ("no room to turn") while any are within `turn_clearance`
+(0.55 m; 0.70 exploring). The head LiDAR loses sight of things once they're
+behind the body; the memory doesn't. Exploring with no room to turn: only
+roughly-straight-ahead legs, else wait for the remote. Sim with all of it:
+3 of 3 rooms done (8 legs, 22–23 m, home within 0.11 m); the 1 m route done.
+
 Two follower changes came with it and apply to routes too: something in the
 forward lane stops **walking forward** only, not a turn on the spot (only the
 0.55 m ring does — that is what a turn sweeps), so a robot facing a wall can
