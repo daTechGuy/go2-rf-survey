@@ -39,8 +39,12 @@ cd ~/go2-rf-survey && bash tools/go2loop.sh build # our image (~10 min)
 ## Use
 
 ```bash
-bash sim/run_sim.sh up small_room        # or: box (obstacle test), classroom
+bash sim/run_sim.sh up small_room        # or: box (obstacle test), classroom, furnished, hall
 AISLE=1.4 bash sim/run_sim.sh up classroom
+LAYOUT=2 bash sim/run_sim.sh up furnished   # 9 x 7 m, random tables/chairs per LAYOUT
+LAYOUT=1 bash sim/run_sim.sh up hall        # 25 x 20 m, rows of desks
+YAW_GAIN=0.5 bash sim/run_sim.sh up ...     # turn at half the commanded rate, like the Go2
+bash tools/demo.sh --explore --i-confirm-breathing --remote-start --detach --skip-stage-gate
 bash sim/run_sim.sh status               # topic rates
 bash tools/go2loop.sh preflight --no-update
 bash tools/go2loop.sh bridge-up && bash tools/go2loop.sh turn-test --i-confirm-breathing
@@ -52,7 +56,8 @@ bash sim/run_sim.sh down
 ```
 
 Worlds come from `sim/worlds/make_worlds.py` (placeholder classroom: 3 m of
-desks either side of the aisle from the door; `--aisle` sets the width).
+desks either side of the aisle from the door; `--aisle` sets the width;
+furnished room and hall: furniture placed from `--layout N`).
 
 ## Results, 2026-10-26
 
@@ -88,3 +93,47 @@ misses the trot's pitch (floor read as obstacles, position lost) → ground
 truth pose; 10 Hz ground truth → 150 Hz, and each scan placed with the pose
 at its own time; Velodyne off without `always_on`, level, and blind under
 0.9 m → patched; worlds must be named `default` for the Velodyne plugin.
+
+## Results, 2026-10-28 to 10-31: a sim that turns like the Go2
+
+On the robot the Go2 only *sways* for gentle turn or walk requests (firmware
+`mcf`; see [autonomous-loop.md](../docs/autonomous-loop.md#stage-1--bridge-only-robot-turns-on-the-spot)).
+`YAW_GAIN` makes the sim turn at a fraction of the commanded rate, so every
+change was tried on a sluggish robot before the real one.
+
+**Routes** (small room, 1 m out-and-back, Stage 1 turn test first):
+
+| Change | Sim result |
+|---|---|
+| Brisk turns (1.0 rad/s), `YAW_GAIN=0.33` / `0.5` | turn test PASS; 1 m route done |
+| Steady 0.3 m/s walking, stall check, L2+A abort | 1 m route done (the robot had stalled short of the turn point at 0.13 and 0.20 m/s) |
+| Turn memory, first version | **stalled**: "no room to turn" at the turn point, every time |
+| … robot's own legs dropped before remembering | 1 m route done |
+
+The turn-memory stall was a real bug the robot would have hit too: the LiDAR
+sees the robot's own legs, and remembered at every step they became
+obstacles left behind it, inside its own turn sweep.
+
+**Exploring the furnished room** (9 × 7 m, tables, chairs, a cupboard; three
+layouts; `YAW_GAIN=0.5`):
+
+| Version | Layout 1 | Layout 2 | Layout 3 |
+|---|---|---|---|
+| Greedy, first | stuck: legs ended beside a chair, could not turn | sim pose dropout, timed out | done, 3 legs |
+| + legs end 0.8 m clear of anything | done: 8 legs, 21 m, home 0.14 m | done: 4 legs, 10 m, 0.13 m | done: 8 legs, 23 m, 0.12 m |
+| + wider margins (after the robot brushed a podium and a desk) | done: 9 m, 0.11 m | done: 5 m, 0.09 m | done: 8 m, 0.10 m |
+| + turn memory (legs fixed) | done: 8 legs, 22 m, 0.11 m | done: 8 legs, 22 m, 0.10 m | done: 8 legs, 23 m, 0.10 m |
+
+**Exploring the hall** (25 × 20 m, seven rows of desks, greedy, 20 legs
+within 10 m, 2.5 m legs):
+
+| Layout | Result |
+|---|---|
+| 1 | done: 20 legs, 80 m walked, home within 0.13 m, no pauses |
+| 2 | done: 20 legs, 92 m, home within 0.14 m, no pauses |
+
+Safe at this size, but **inefficient**: it never went deeper than ~8–9 m into
+the hall (it avoids where it has *walked*, not what it has already *seen*),
+half the distance was the walk home retracing every leg, and the far half of
+the hall was only glimpsed between desks. That is what frontier exploring
+(`coverage.py`) is for — results below.
