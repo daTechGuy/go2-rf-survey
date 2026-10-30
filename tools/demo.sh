@@ -164,8 +164,10 @@ cleanup() {
 # one page per run (tools/run_report.py): after the "demo finished:" line,
 # which it reads; best-effort, never what decides how the run ended
 report() {
-  python3 "$REPO/tools/run_report.py" "$HOME/surveys/$BAG" >/dev/null 2>&1 && \
+  if python3 "$REPO/tools/run_report.py" "$HOME/surveys/$BAG" >/dev/null 2>&1; then
     echo "   report:  scp go2:surveys/${BAG}_report.html ."
+  fi
+  return 0                            # a missing report never changes how a run ended
 }
 # every way out leaves a "demo finished:" line, which go2loop.sh results reads
 bail() { echo "$1"; cleanup; echo "== $(ts) demo finished: ${2:-failed ($1)}"; report; exit 1; }

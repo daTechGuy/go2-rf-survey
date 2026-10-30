@@ -33,5 +33,10 @@ case "$cmd" in
     ev "floorplan $bag"
     echo "fake" > "$SURV/${bag}_map-topdown.png"
     echo "wrote /surveys/${bag}_map-topdown.png" ;;
+  *front_camera.py*--once*)
+    # go2loop.sh camera-snap / camera-check: one still (demo.sh's report pictures)
+    shot=$(echo "$cmd" | sed -n 's#.*--once /surveys/\([^ "]*\).*#\1#p')
+    ev "camera $shot"
+    [ -f "$FAKE/no_camera" ] || echo "fake jpeg" > "$SURV/$shot" ;;
   *) echo "run.sh $cmd" >> "$FAKE/unhandled" ;;
 esac

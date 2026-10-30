@@ -95,6 +95,9 @@ if scenario 1 "rehearsal: detach, remote start, finish"; then
   results >/dev/null
   check "results: rehearsal OK"           has "$FAKE/results.out" 'rehearsal OK'
   check "results: floorplan scp line"     has "$FAKE/results.out" 'floorplan: scp go2:surveys/demo_.*_map-topdown.png'
+  check "results: report scp line"        has "$FAKE/results.out" 'report: .*scp go2:surveys/demo_.*_report.html'
+  check "camera stills: start and end"    has "$FAKE/events.log" 'camera demo_.*_camera_end.jpg'
+  check "report has the outcome"          has "$(ls -t "$HOME"/surveys/demo_*_report.html | head -1)" 'Rehearsal OK'
   check "all containers down (viz stays)" cleaned
   check "viz left running"                running go2viz
   check "pid file removed"                test ! -f "$HOME/surveys/.demo.pid"
