@@ -4,32 +4,37 @@ Autonomous WiFi site surveying with a Unitree Go2 EDU. The robot maps a floor wi
 LiDAR, then walks it again recording signal strength at every waypoint, producing
 per-SSID heatmaps registered to the SLAM floorplan.
 
-**Status:** hardware bring-up under way. The robot is reachable, the Humble
-container builds and runs on it, and room maps are made from the Go2's
-**built-in** LiDAR. Current focus is an **autonomous classroom mapping demo**:
-the robot walks a short route by itself, stops for obstacles, and leaves a
-floorplan. The WiFi survey is written and tested, and comes after that.
+**Status:** the robot **maps a room by itself**. Started from its handheld
+remote with no cable attached, it either walks a set route or **explores**
+(picks its own way into open floor, then walks home), stops for obstacles,
+and leaves a floorplan and a one-page report. All on the Go2's **built-in**
+LiDAR. The WiFi survey is written and tested, and comes next.
 
 > ### ▶ Resume here
 >
-> **Next session: follow [docs/field-guide/01-small-room-test.md](docs/field-guide/01-small-room-test.md)**,
-> step by step from unpacking: power, connect, checks, the remote-button
-> check, the Stage 1 turn test, then an untethered 1 m walk.
+> **Next session: follow [docs/field-guide/04-explore-a-room.md](docs/field-guide/04-explore-a-room.md)**:
+> internet route, turn test, 1 m walk (the day's safety gate), then explore.
+> First time with this robot or laptop: [01-small-room-test.md](docs/field-guide/01-small-room-test.md).
+> **The stop is L2 + B** (hold L2, press B).
 >
-> Where it stands (2026-10-26):
-> - ✅ SSH (key-based, `ssh go2`), the container image, and a map from a stationary recording
-> - ✅ Autonomous loop dry run on the robot; first motion via the vendor SDK ([motion-test](docs/motion-test.md))
-> - ❌ **Stage 1 turn test failed once (2026-10-21), cause unknown.** It is now
->   instrumented and refuses unless the robot is in walking mode, the leading suspect.
-> - 🆕 Not yet run on the robot: live view, one-command demo, remote start /
->   untethered runs. All exercised off-robot by the [fake robot](#fake-robot).
+> Where it stands (2026-10-31):
+> - ✅ Untethered autonomous runs on the robot: 1 m out-and-back (13 s, 0.18 m
+>   from the start) and a first **exploration** of a classroom (8 legs, whole
+>   room mapped, home within 0.16 m)
+> - ⚠ That exploration **brushed a podium and a desk**. Since then: wider
+>   margins, a 2 s LiDAR picture, and a turn check that remembers what is
+>   behind the robot. 3 of 3 sim rooms clean; **not yet re-run on the robot.**
+> - 🔎 Found on this firmware (`mcf`): the Go2 only *sways* for gentle turn
+>   or walk requests, from its own remote too, so it turns briskly (1.0 rad/s)
+>   and walks at 0.3 m/s. [Details](docs/autonomous-loop.md#stage-1--bridge-only-robot-turns-on-the-spot).
 > - ⬜ Mid-360 → `livox_ros_driver2` initialises but receives no data (unresolved)
 >
-> Session history: [bring-up log](docs/bringup-log-2026-10-20.md),
-> [autonomous-loop.md](docs/autonomous-loop.md#stage-1--bridge-only-robot-turns-on-the-spot).
+> After a session: `python tools\get_results.py` on the laptop copies every
+> run's floorplan, report and recording (resumable).
 >
-> **No robot to hand?** `python tools/run_tests.py` (stdlib only), and
-> `bash tools/fake_robot/run.sh` (Git Bash) for the on-robot scripts.
+> **No robot to hand?** `python tools/run_tests.py` (stdlib only),
+> `bash tools/fake_robot/run.sh` (Git Bash) for the on-robot scripts, and the
+> [Gazebo sim](sim/README.md) for whole runs.
 
 ---
 
@@ -88,12 +93,13 @@ the Humble container:
 
 ```
 built-in LiDAR ──► go2_survey_loop ──► /cmd_vel ──► go2_survey_bridge ──► sport Move ──► robot
- (/utlidar/*)       route + obstacle stop           clamp, slew, watchdog
-       │
-       ├──► ros2 bag ──► tools/bag_to_map.py ──► floorplan PNG + occupancy grid
-       └──► tools/live_map.py + foxglove_bridge ──► Foxglove on the laptop
-front camera (videohub) ──► tools/front_camera.py ──────┘
+ (/utlidar/*)       route or exploration,           clamp, slew, watchdog
+       │            obstacle stops, turn memory
+       ├──► ros2 bag ──► tools/bag_to_map.py ──► floorplan PNG + occupancy grid ─┐
+       └──► tools/live_map.py + foxglove_bridge ──► Foxglove on the laptop       ├► tools/run_report.py
+front camera (videohub) ──► tools/front_camera.py ──────┘  (+ stills) ───────────┘   one page per run
 handheld remote ──► /wirelesscontroller ──► tools/remote_trigger.py ──► start / resume / abort
+laptop: tools/get_results.py ◄── every run's files, resumable
 ```
 
 ## Output schema
@@ -121,14 +127,15 @@ hardware access.
 
 ```bash
 python tools/run_tests.py        # or: bash tools/run_tests.sh
-# 242 tests passed across 13 suites
+# 375 tests passed across 20 suites
 ```
 
 Plain stdlib `unittest` — no ROS, no radio, no robot, no numpy. That's
 deliberate: the parts most likely to be quietly wrong (`iw` output parsing,
 velocity limiting, the watchdog, obstacle classification, route following,
-the stage gate, remote-button decoding) are pure functions precisely so they
-can be pinned before the hardware exists. `colcon test` picks them up too.
+the stage gate, remote-button decoding, exploration's leg choice, the run
+report) are pure functions precisely so they can be pinned before the
+hardware exists. `colcon test` picks them up too.
 
 ### Fake robot
 
@@ -146,12 +153,17 @@ shutdown order. Run it after changing any of them.
 
 `go2_survey_loop` walks a route (`out_and_back` or `rectangle`) from the
 robot's own LiDAR odometry and **stops** for anything within 0.5 m ahead or
-0.55 m around. It's a stop system, not a planner. Dry-run by default; pauses
-latch; there's a geofence and a time limit. `tools/demo.sh` runs a whole demo
-with one command and enforces the staged rollout (turn test → 1 m → longer).
-With `--remote-start --detach` it is started from the handheld remote with
-no cable attached. Details: [autonomous-loop.md](docs/autonomous-loop.md);
-hands-on steps: [field guide](docs/field-guide/README.md).
+0.55 m around; a turn on the spot also waits for anything remembered from the
+last 10 s within its sweep, behind it included. Or it **explores**
+(`--explore`): short legs into open floor it hasn't walked, chosen from the
+LiDAR picture, then home along its own path, with wider margins. Dry-run by
+default; pauses latch; it pauses itself if it is told to move and doesn't;
+there's a geofence and a time limit. `tools/demo.sh` runs a whole demo with
+one command and enforces the staged rollout (turn test → 1 m → longer). With
+`--remote-start --detach` it is started from the handheld remote with no
+cable attached, and each run leaves `<run>_report.html`. Details:
+[autonomous-loop.md](docs/autonomous-loop.md); hands-on steps:
+[field guide](docs/field-guide/README.md).
 
 ### `go2_survey_wifi` — the ROS 2 node
 
@@ -310,7 +322,8 @@ there is a working deliverable even if Nav2 tuning stalls.
       *Exit: per-SSID heatmap of one floor, registered to the SLAM map*
 - [~] **06 · Velocity bridge** — `/cmd_vel` → `Move(vx, vy, vyaw)`, with a watchdog
       *Exit: robot tracks `/cmd_vel`; halts within 300 ms of silence.
-      Watchdog fired on time on the robot; tracking failed the first turn test (2026-10-21)*
+      Watchdog stops it cleanly; the turn test passes at 1.0 rad/s (the Go2
+      sways for gentler turns); untethered autonomous runs done (2026-10-31)*
 - [ ] **07 · Depth camera and costmaps** — decimate hard, feed the local costmap
       *Exit: a box on the floor at 0.5 m appears in the local costmap*
 - [ ] **08 · Nav2 and the waypoint route** — the long pole
@@ -320,7 +333,7 @@ there is a working deliverable even if Nav2 tuning stalls.
 
 | | |
 |---|---|
-| **[field-guide/](docs/field-guide/README.md)** | **Hands-on session guides: unpack → power up → small-room test → classroom demo → pack up.** Start here for a robot session. |
+| **[field-guide/](docs/field-guide/README.md)** | **Hands-on session guides: unpack → power up → small-room test → explore a room → classroom demo → pack up.** Start here for a robot session. |
 | [autonomous-loop.md](docs/autonomous-loop.md) | The autonomous route: safety layers, staged rollout (Stage 0–3), untethered runs |
 | [live-view.md](docs/live-view.md) | Foxglove on the laptop: live map, trail, loop status |
 | [sim/README.md](sim/README.md) | Gazebo Go2 on the laptop (WSL): our real code against a simulated robot; results |
@@ -334,9 +347,15 @@ there is a working deliverable even if Nav2 tuning stalls.
 
 ### On exploration
 
-Resist live frontier exploration. Teleop-drive the map once with a human present,
-save it, then survey against known geometry. Mapping and surveying in one
-autonomous pass is where projects like this stall.
+**Mapping** explores: a classroom's furniture moves between visits, so a
+fixed route goes stale, and the robot picks its own way instead
+(`demo.sh --explore`, guide 04). It is greedy and short-range (legs of
+≤ 1.5 m within 4 m of the start), not frontier exploration with a planner;
+Nav2 is still phase 8.
+
+The **survey** still runs against known geometry: map first, then survey.
+Mapping and surveying in one autonomous pass is where projects like this
+stall (D3).
 
 ---
 
@@ -418,11 +437,12 @@ go2_survey_bridge/       ✅ /cmd_vel → sport mode         (phase 6)
     bridge_node.py         rclpy node, services, e-stop
     motion_backend.py      sport Move or obstacle-avoid Move — pure, tested
   launch/bridge.launch.py
-go2_survey_loop/         ✅ autonomous route + obstacle stop (dry-run default)
+go2_survey_loop/         ✅ autonomous route or exploration + obstacle stops (dry-run default)
   go2_survey_loop/
     geometry.py            routes, poses — pure, tested
-    obstacles.py           floor + obstacle classification — pure, tested
+    obstacles.py           floor + obstacle classification, turn memory — pure, tested
     follower.py            mission state machine, safety stops — pure, tested
+    explore.py             exploration: leg choice, home by retracing — pure, tested
     loop_node.py           rclpy node: ~/start ~/stop ~/resume, ~/status
 go2_survey_description/  ✅ TF frames, 22° LiDAR mount    (phase 3)
   urdf/sensors.urdf.xacro  Mid-360 + D435i macro
@@ -436,13 +456,16 @@ tools/                   ✅ post-processing, runs off-robot
   fov_geometry.py          mount-angle maths — pure, 21 tests
   go2_survey.sh            phase-0 onboard inventory
   run_tests.py / .sh       all suites, no dependencies
+  get_results.py           laptop: copy runs off the robot, resumable
+  run_report.py            one page per run (also made on the robot by demo.sh)
   -- on the robot --
   go2loop.sh               one-word control: up/start/stop/status, bridge, viz,
                            remote, demo-log/demo-stop/results, record-start/stop
   demo.sh                  one-command demo, staged rollout enforced
   preflight.sh             start-of-session check (+ sensor_check, readiness)
   stage_gate.py            turn test → 1 m → longer, within 12 h
-  turn_test.py             Stage 1, instrumented (+ turn_analysis)
+  turn_test.py             Stage 1, instrumented (+ turn_analysis), robot's replies logged
+  state_watch.py           read-only: what the firmware reports while driven by hand
   remote_trigger.py        start/abort from the handheld remote (+ remote_keys)
   bag_to_map.py            recording → floorplan PNG + occupancy grid
   live_map.py, viz_entry.sh  live view for Foxglove

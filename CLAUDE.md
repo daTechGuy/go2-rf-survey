@@ -25,10 +25,10 @@ survey waits for it.
 | 03 Mount and TF | 🟨 mounted nose-down; exact pitch still to measure for URDF |
 | 04 SLAM | 🟨 config written; mapping meanwhile = built-in `/utlidar/*` + `tools/bag_to_map.py` |
 | 05 **WiFi survey** | ✅ written + tested — the deliverable (deferred) |
-| 06 Velocity bridge | 🟨 watchdog stops it cleanly; **Stage 1 turn test FAILS: robot twists, gait never starts (2026-10-28)** |
+| 06 Velocity bridge | ✅ watchdog stops it cleanly; turn test passes at 1.0 rad/s (gentler turns only sway the Go2); untethered runs done |
 | 07 Depth and costmaps | 🟨 D435i present on USB (`8086:0b3a`); not brought up |
 | 08 Nav2 | ⬜ (later: go2_ros2_sdk) |
-| — Autonomous loop | ✅ dry run on the robot; live stages gated (`tools/stage_gate.py`) |
+| — Autonomous loop | ✅ routes and exploration live on the robot, untethered; stages gated (`tools/stage_gate.py`); a report per run |
 
 Run on the robot 2026-10-28: preflight, image build, live view + camera,
 remote-keys. **Not yet run on the robot:** `tools/demo.sh`, untethered runs,
@@ -59,7 +59,9 @@ passed at a steady 0.3 m/s; stall check + L2+A abort added after the robot
 was laid down mid-run while the route kept commanding. **Exploration built**
 (`demo.sh --explore`, guide 04): 3 of 3 sim rooms done, not yet on the robot.
 
-**Next action:** guide 04 on the robot (turn test, 1 m walk, then explore).
+**Next action:** guide 04 on the robot (turn test, 1 m walk, then explore with
+the wider margins + turn memory; watch the podium/desk). Then
+`python tools\get_results.py` on the laptop.
 Then the 3 m route / classroom (guide 02). Each session:
 route (user sudo) → preflight → `bridge-up` + `turn-test --i-confirm-breathing`
 (defaults to the 1.0 rad/s × 0.5 s turn that passes) → [ASK] demo. Robot-side
@@ -91,7 +93,7 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
 
 - **Pure functions for anything that can be wrong quietly.** `iw` parsing,
   velocity limiting, the watchdog, and the FOV maths are all ROS-free and
-  clock-free so they can be tested without hardware. 242 tests run on a bare
+  clock-free so they can be tested without hardware. 375 tests run on a bare
   Python. Keep it that way — if new logic can be made testable, make it.
 - **Tests before hardware.** `python tools/run_tests.py` must stay green and
   must not acquire dependencies.
