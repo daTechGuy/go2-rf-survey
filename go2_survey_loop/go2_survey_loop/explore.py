@@ -54,6 +54,9 @@ class ExploreParams:
                                     # or a leg along a wall stalls on it
     margin: float = 1.0             # m centre-to-obstacle kept at a leg's end
                                     # (nose 0.35 + stop 0.5 + 0.15 slack)
+    end_clearance: float = 0.8      # m from a leg's end to anything, any direction:
+                                    # it must be able to turn there (ring 0.55).
+                                    # Sim 2026-10-31: legs ending by a chair stalled
     radius: float = 4.0             # m: legs end within this of the start
     novelty_cap: float = 3.0        # m
     length_weight: float = 0.3
@@ -78,8 +81,8 @@ def robot_frame(points_xy, pose: Pose2D, body: ObstacleParams, max_range: float)
     """Odom-frame (x, y) -> robot-frame (forward, left), without the robot's
     own footprint (its legs are in every scan) and beyond ``max_range``."""
     c, s = math.cos(pose.yaw), math.sin(pose.yaw)
-    out = []
-    r2 = max_range * max_range
+    cells = {}                      # one point per 5 cm cell: a real scan has
+    r2 = max_range * max_range      # thousands, planning needs the shape
     for x, y in points_xy:
         dx, dy = x - pose.x, y - pose.y
         if dx * dx + dy * dy > r2:
@@ -87,8 +90,8 @@ def robot_frame(points_xy, pose: Pose2D, body: ObstacleParams, max_range: float)
         xr, yr = c * dx + s * dy, -s * dx + c * dy
         if -body.body_rear <= xr <= body.body_front and abs(yr) <= body.body_half_width:
             continue
-        out.append((xr, yr))
-    return out
+        cells.setdefault((round(xr / 0.05), round(yr / 0.05)), (xr, yr))
+    return list(cells.values())
 
 
 def free_distance(obst_robot, heading_rel: float, corridor_half: float,
@@ -112,14 +115,22 @@ def choose_leg(pose: Pose2D, obstacles_xy, visited, start: Pose2D,
     """The best next leg, or None if no direction is open enough."""
     obst = robot_frame(obstacles_xy, pose, body, p.max_range)
     best = None
+    c2 = p.end_clearance * p.end_clearance
     for k in range(p.headings):
         rel = -math.pi + 2.0 * math.pi * k / p.headings
         free = free_distance(obst, rel, p.corridor_half, p.max_range)
-        length = min(p.leg_max, free - p.margin)
-        if length < p.leg_min:
+        longest = min(p.leg_max, free - p.margin)
+        # the longest leg that ends somewhere it can turn round, in 0.3 m steps
+        length, ex, ey = longest, None, None
+        while length >= p.leg_min:
+            fx, fy = length * math.cos(rel), length * math.sin(rel)     # robot frame
+            if all((xr - fx) ** 2 + (yr - fy) ** 2 > c2 for xr, yr in obst):
+                a = pose.yaw + rel
+                ex, ey = pose.x + length * math.cos(a), pose.y + length * math.sin(a)
+                break
+            length -= 0.3
+        if ex is None:
             continue
-        a = pose.yaw + rel
-        ex, ey = pose.x + length * math.cos(a), pose.y + length * math.sin(a)
         if math.hypot(ex - start.x, ey - start.y) > p.radius:
             continue
         novelty = min([math.hypot(ex - vx, ey - vy) for vx, vy in visited]

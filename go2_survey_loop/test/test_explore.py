@@ -134,6 +134,26 @@ class TestChooseLeg(unittest.TestCase):
             if leg is not None:
                 self.assertLessEqual(math.hypot(*leg.target), 4.0 + 1e-9)
 
+    def test_leg_never_ends_beside_something(self):
+        # a chair just off the corridor at 1.5 m: the full leg would end beside
+        # it (sim, 2026-10-31: stuck, unable to turn). It must stop short.
+        chair = box(1.3, 0.65, 1.7, 1.05)
+        leg = choose_leg(Pose2D(0, 0, 0), chair, [(0, 0)], Pose2D(0, 0, 0),
+                         ExploreParams(turn_cost=5.0))          # wants straight on
+        self.assertIsNotNone(leg)
+        tx, ty = leg.target
+        self.assertGreater(min(math.hypot(tx - x, ty - y) for x, y in chair),
+                           EP.end_clearance)
+
+    def test_every_leg_end_can_turn(self):
+        for x, y in [(0.0, 0.0), (3.5, -1.5), (6.0, 1.0)]:
+            leg = choose_leg(Pose2D(x, y, 0.3), ROOM, [(x, y)], Pose2D(x, y, 0))
+            if leg is None:
+                continue
+            tx, ty = leg.target
+            self.assertGreater(min(math.hypot(tx - px, ty - py) for px, py in ROOM),
+                               EP.end_clearance)
+
     def test_corridor_clears_the_ring(self):
         # planning corridor at least as wide as the clearance ring, so walking a
         # leg along a wall never trips the ring and stalls the exploration
