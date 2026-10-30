@@ -50,12 +50,17 @@ class ExploreParams:
     leg_max: float = 1.5            # m
     leg_min: float = 0.6            # m: a shorter opening isn't worth walking
     headings: int = 16              # candidate directions, evenly spaced
-    corridor_half: float = 0.60     # m: wider than the 0.55 m clearance ring,
+    # Margins for exploring, wider than a route's. On the robot (2026-10-31)
+    # exploring a classroom brushed a podium and a desk -- from the front, and
+    # the rear swinging round in a brisk turn -- with 0.6 / 1.0 / 0.8 here and
+    # the route's ring 0.55. demo.sh --explore also widens the loop's own
+    # stops to match (ring 0.70, stop 0.7 m, lane 0.45).
+    corridor_half: float = 0.75     # m: wider than the clearance ring,
                                     # or a leg along a wall stalls on it
-    margin: float = 1.0             # m centre-to-obstacle kept at a leg's end
-                                    # (nose 0.35 + stop 0.5 + 0.15 slack)
-    end_clearance: float = 0.8      # m from a leg's end to anything, any direction:
-                                    # it must be able to turn there (ring 0.55).
+    margin: float = 1.3             # m centre-to-obstacle kept at a leg's end
+                                    # (nose 0.35 + stop 0.7 + 0.25 slack)
+    end_clearance: float = 1.1      # m from a leg's end to anything, any direction:
+                                    # it must be able to turn there (ring 0.70).
                                     # Sim 2026-10-31: legs ending by a chair stalled
     radius: float = 4.0             # m: legs end within this of the start
     novelty_cap: float = 3.0        # m

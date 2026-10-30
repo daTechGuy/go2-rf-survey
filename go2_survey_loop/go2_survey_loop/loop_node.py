@@ -139,7 +139,9 @@ class LoopNode(Node):
         self._odom_frame = ""
         self._cloud_t: float | None = None
         self._front = self._near = 0
-        self._obst_scans: deque = deque(maxlen=3)   # recent scans' obstacle (x, y), for explore
+        # ~2 s of scans' obstacle (x, y) for exploration to plan from: one scan
+        # is sparse (thin legs, desk edges); planning happens standing still
+        self._obst_scans: deque = deque(maxlen=30)
         self._floor_hist: deque = deque(maxlen=15)
         self._frame_warned = False
         self.mission: Mission | None = None

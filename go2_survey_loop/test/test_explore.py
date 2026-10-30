@@ -27,7 +27,8 @@ from go2_survey_loop.obstacles import ObstacleParams, classify  # noqa: E402
 
 FP = FollowerParams()
 EP = ExploreParams()
-BODY = ObstacleParams()
+# the loop's stops as demo.sh --explore sets them
+BODY = ObstacleParams(clearance_radius=0.70, stop_distance=0.70, lane_half_width=0.45)
 FRESH = 0.05
 DT = 0.1
 
