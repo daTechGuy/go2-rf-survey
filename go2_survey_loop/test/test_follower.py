@@ -90,6 +90,13 @@ class TestSteering(unittest.TestCase):
         close, _, _, _ = compute_command(Pose2D(0, 0, 0), (0.25, 0), FP, False)
         self.assertLess(close, far)
 
+    def test_never_slower_than_min_vx_short_of_target(self):
+        # 2026-10-31 on the robot: 0.13 m/s at 22 cm out, and it stood still
+        vx, _, turning, dist = compute_command(Pose2D(0, 0, 0), (0.22, 0), FP, False)
+        self.assertFalse(turning)
+        self.assertGreater(dist, FP.reach_tol)
+        self.assertGreaterEqual(vx, FP.min_vx - 1e-9)
+
     def test_min_turn_rate_when_turning(self):
         # small error while already turning: still turns at least min_vyaw
         target = (math.cos(0.13), math.sin(0.13))

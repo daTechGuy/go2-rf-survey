@@ -93,6 +93,7 @@ class LoopNode(Node):
         d("rate_hz", 10.0)
         d("cloud_stride", 4)
         d("max_vx", 0.30)
+        d("min_vx", 0.20)                   # walking, short of a waypoint (follower.py)
         d("max_vyaw", 1.00)
         d("min_vyaw", 0.70)                 # turning in place never commands less (follower.py)
         d("reach_tol", 0.20)
@@ -114,7 +115,8 @@ class LoopNode(Node):
 
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.dry_run = bool(g("dry_run"))
-        self.follow = FollowerParams(max_vx=g("max_vx"), max_vyaw=g("max_vyaw"),
+        self.follow = FollowerParams(max_vx=g("max_vx"), min_vx=g("min_vx"),
+                                     max_vyaw=g("max_vyaw"),
                                      min_vyaw=g("min_vyaw"), reach_tol=g("reach_tol"),
                                      lookahead=g("lookahead"))
         self.obst = ObstacleParams(

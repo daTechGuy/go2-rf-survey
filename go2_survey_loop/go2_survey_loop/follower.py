@@ -46,6 +46,11 @@ from go2_survey_loop.geometry import Pose2D, wrap_angle
 @dataclass(frozen=True)
 class FollowerParams:
     max_vx: float = 0.30        # m/s -- deliberately half the bridge's ceiling
+    # m/s while still short of a waypoint. The Go2 sways in place for slow
+    # walk requests too: on 2026-10-31 it stood 22 cm short of the turn-round
+    # point for 9 s, commanded 0.13 m/s, until aborted. The k_lin slow-down
+    # alone took it below the threshold.
+    min_vx: float = 0.20
     max_vyaw: float = 1.00      # rad/s
     # rad/s while turning in place. Was 0.15. On 2026-10-28 the Go2 (firmware
     # 'mcf') only swayed for gentle turn requests -- from the remote too --
@@ -135,7 +140,7 @@ def compute_command(pose: Pose2D, target, p: FollowerParams, turning: bool, orig
             vyaw = math.copysign(p.min_vyaw, err)
         return 0.0, vyaw, True, dist
 
-    vx = min(p.max_vx, p.k_lin * dist) * max(0.0, math.cos(err))
+    vx = max(p.min_vx, min(p.max_vx, p.k_lin * dist)) * max(0.0, math.cos(err))
     return vx, vyaw, False, dist
 
 
