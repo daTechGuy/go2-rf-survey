@@ -7,7 +7,9 @@
 #   bash tools/demo.sh --explore --i-confirm-breathing        # no route: it picks
 #                   its own way into open space it hasn't seen, then walks home
 #                   (--legs N, default 8; --radius R m from the start, default 4;
-#                   --leg-max M m per leg, default 1.5)
+#                   --leg-max M m per leg, default 1.5;
+#                   --strategy frontier (default: to the edge of what it has
+#                   seen, home the short way) or greedy (the first version))
 #   --minutes N     time limit for the run, default 5 (a big hall: 15)
 #
 # Options: --shape out_and_back|rectangle  --width W (rectangle)
@@ -44,7 +46,7 @@ cd "$REPO" || exit 1
 G="bash $REPO/tools/go2loop.sh"
 
 LENGTH=""; WIDTH=""; SHAPE=out_and_back; BACKEND=sport; NAME=demo
-EXPLORE=0; LEGS=8; RADIUS=4.0; LEG_MAX=1.5; MINUTES=5
+EXPLORE=0; LEGS=8; RADIUS=4.0; LEG_MAX=1.5; MINUTES=5; STRATEGY=frontier
 BREATHING=0; REHEARSE=0; VIZ=1; MAP=1; SKIP_GATE=0
 DETACH_RUN=0; REMOTE=0; WAIT=600
 ARGS=("$@")
@@ -62,6 +64,7 @@ while [ $# -gt 0 ]; do
     --radius) RADIUS="$2"; shift 2 ;;
     --leg-max) LEG_MAX="$2"; shift 2 ;;
     --minutes) MINUTES="$2"; shift 2 ;;
+    --strategy) STRATEGY="$2"; shift 2 ;;
     --backend) BACKEND="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
     --i-confirm-breathing) BREATHING=1; shift ;;
@@ -209,6 +212,7 @@ if [ "$EXPLORE" = 1 ]; then
   LOOP_ARGS="-p shape:=explore -p explore_legs:=$LEGS -p dry_run:=$DRY"
   LOOP_ARGS="$LOOP_ARGS -p explore_radius:=$(printf %.2f "$RADIUS")"
   LOOP_ARGS="$LOOP_ARGS -p explore_leg_max:=$(printf %.2f "$LEG_MAX")"
+  LOOP_ARGS="$LOOP_ARGS -p explore_strategy:=$STRATEGY"
   LOOP_ARGS="$LOOP_ARGS -p clearance_radius:=0.70 -p stop_distance:=0.70 -p lane_half_width:=0.45"
   LOOP_ARGS="$LOOP_ARGS -p turn_clearance:=0.70"
 else

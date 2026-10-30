@@ -155,6 +155,16 @@ def obstacle_xy(points, pose: Pose2D, floor_z: float, p: ObstacleParams = Obstac
     return out
 
 
+def floor_xy(points, pose: Pose2D, floor_z: float, band: float = 0.06,
+             max_range: float = 8.0):
+    """(x, y) of floor returns -- within ``band`` of the floor height, inside
+    ``max_range`` -- for exploration's coverage grid: floor the LiDAR has seen
+    is floor known to be there (coverage.py)."""
+    r2 = max_range * max_range
+    return [(x, y) for x, y, z in points
+            if abs(z - floor_z) <= band and (x - pose.x) ** 2 + (y - pose.y) ** 2 <= r2]
+
+
 def floor_from_scan(points, pose: Pose2D, radius: float = 2.0,
                     percentile: float = 2.0, min_points: int = 50):
     """Floor height from the low tail of z near the robot, or None if the

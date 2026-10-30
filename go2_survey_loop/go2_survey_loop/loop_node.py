@@ -51,7 +51,7 @@ from go2_survey_loop.geometry import (
     Pose2D, plan_local, route_extent, to_world, yaw_from_quaternion,
 )
 from go2_survey_loop.obstacles import (
-    ObstacleMemory, ObstacleParams, classify, floor_from_scan, median, obstacle_xy,
+    ObstacleMemory, ObstacleParams, classify, floor_from_scan, floor_xy, median, obstacle_xy,
     ring_count,
 )
 
@@ -90,6 +90,7 @@ class LoopNode(Node):
         d("explore_legs", 8)
         d("explore_leg_max", 1.5)           # m
         d("explore_radius", 4.0)            # m from the start; geofence = this + margin
+        d("explore_strategy", "frontier")   # or "greedy" (explore.py)
         d("length", 0.0)
         d("width", 0.0)
         d("turn", "left")
@@ -225,6 +226,8 @@ class LoopNode(Node):
         if self.get_parameter("shape").value == "explore":
             # kept from before ~/start too: the first leg is planned at once
             self._obst_scans.append(obst)
+            if isinstance(self.mission, ExploreMission):
+                self.mission.observe(floor_xy(pts, pose, floor_z), obst)
         self._cloud_t = now
 
     def _ages(self, now: float):
@@ -332,7 +335,8 @@ class LoopNode(Node):
             stall_s=0.0 if self.dry_run else g("stall_s"))
         if shape == "explore":
             ep = ExploreParams(legs=int(g("explore_legs")), leg_max=float(g("explore_leg_max")),
-                               radius=float(g("explore_radius")))
+                               radius=float(g("explore_radius")),
+                               strategy=str(g("explore_strategy")))
             self.mission = ExploreMission(start, now, self.follow, safety, ep, self.obst)
             what = f"exploring {ep.legs} legs within {ep.radius:.1f} m"
         else:

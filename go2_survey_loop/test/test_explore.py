@@ -82,8 +82,9 @@ def run(mission, pose, room, steps=6000, yaw_gain=1.0, extra=lambda t: []):
 def new_mission(start=Pose2D(0, 0, 0), legs=6, **safety):
     s = dict(max_duration_s=600.0, geofence_m=EP.radius + 1.0)
     s.update(safety)
+    # these tests pin the greedy strategy; frontier: test_explore_frontier.py
     return ExploreMission(start, 0.0, FP, SafetyParams(**s),
-                          ExploreParams(legs=legs), BODY)
+                          ExploreParams(legs=legs, strategy="greedy"), BODY)
 
 
 class TestFreeDistance(unittest.TestCase):
