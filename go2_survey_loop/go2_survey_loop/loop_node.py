@@ -93,7 +93,8 @@ class LoopNode(Node):
         d("rate_hz", 10.0)
         d("cloud_stride", 4)
         d("max_vx", 0.30)
-        d("min_vx", 0.20)                   # walking, short of a waypoint (follower.py)
+        d("min_vx", 0.30)                   # walking, short of a waypoint (follower.py)
+        d("stall_s", 5.0)                   # pause if commanded but not moving; 0 = off
         d("max_vyaw", 1.00)
         d("min_vyaw", 0.70)                 # turning in place never commands less (follower.py)
         d("reach_tol", 0.20)
@@ -281,7 +282,8 @@ class LoopNode(Node):
             odom_timeout_s=g("odom_timeout_s"), cloud_timeout_s=g("cloud_timeout_s"),
             max_duration_s=g("max_duration_s"),
             geofence_m=route_extent(shape, g("length"), g("width")) + g("geofence_margin_m"),
-            min_obstacle_points=k, auto_resume_s=g("auto_resume_s"))
+            min_obstacle_points=k, auto_resume_s=g("auto_resume_s"),
+            stall_s=g("stall_s"))
         self.mission = Mission(to_world(start, local), start, now, self.follow, safety)
         self._last_state = None
         mode = "DRY RUN (nothing published)" if self.dry_run else "LIVE"

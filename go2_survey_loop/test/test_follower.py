@@ -85,10 +85,12 @@ class TestSteering(unittest.TestCase):
         vx, _, _, _ = compute_command(Pose2D(0, 0, 0), (-1, 0.5), FP, False)
         self.assertGreaterEqual(vx, 0.0)
 
-    def test_slows_near_target(self):
+    def test_walks_steadily_up_to_the_target(self):
+        # no slow-down into the Go2's sway zone (min_vx = max_vx since 2026-10-31)
         far, _, _, _ = compute_command(Pose2D(0, 0, 0), (3.0, 0), FP, False)
         close, _, _, _ = compute_command(Pose2D(0, 0, 0), (0.25, 0), FP, False)
-        self.assertLess(close, far)
+        self.assertAlmostEqual(close, far)
+        self.assertAlmostEqual(close, FP.max_vx)
 
     def test_never_slower_than_min_vx_short_of_target(self):
         # 2026-10-31 on the robot: 0.13 m/s at 22 cm out, and it stood still
@@ -405,6 +407,53 @@ class TestPauses(unittest.TestCase):
         self.assertLess(end.x, 2.1)
         paused = [c for _, _, c in log if c.state == State.PAUSED]
         self.assertTrue(all(c.vx == 0 and c.vyaw == 0 for c in paused))
+
+
+class TestStall(unittest.TestCase):
+    """2026-10-31: laid down mid-run, the route kept commanding a walk."""
+
+    def test_commanded_but_not_moving_pauses(self):
+        m = new_mission(stall_s=5.0)
+        pose = Pose2D(0, 0, 0)                       # never moves
+        t, cmd = 0.0, None
+        while t < 6.0:
+            cmd = m.step(t, pose, FRESH, FRESH, 0, 0)
+            if cmd.state != State.RUNNING:
+                break
+            t += 0.1
+        self.assertEqual(cmd.state, State.PAUSED)
+        self.assertIn("not moving", cmd.reason)
+        self.assertGreaterEqual(t, 5.0)
+        self.assertEqual((cmd.vx, cmd.vyaw), (0.0, 0.0))
+        # and it stays paused: standing it up again doesn't restart the walk
+        later = m.step(t + 10.0, pose, FRESH, FRESH, 0, 0)
+        self.assertEqual(later.state, State.PAUSED)
+
+    def test_progress_keeps_it_running(self):
+        m = new_mission(stall_s=5.0)
+        pose, t = Pose2D(0, 0, 0), 0.0
+        for _ in range(100):                         # 10 s, creeping 1 cm per 0.1 s
+            cmd = m.step(t, pose, FRESH, FRESH, 0, 0)
+            self.assertNotEqual(cmd.state, State.PAUSED, cmd.reason)
+            pose = Pose2D(pose.x + 0.01 * math.cos(pose.yaw),
+                          pose.y + 0.01 * math.sin(pose.yaw), pose.yaw + 0.02 * cmd.vyaw)
+            t += 0.1
+
+    def test_resume_after_stall(self):
+        m = new_mission(stall_s=1.0)
+        pose = Pose2D(0, 0, 0)
+        for i in range(15):
+            m.step(i * 0.1, pose, FRESH, FRESH, 0, 0)
+        self.assertEqual(m.state, State.PAUSED)
+        ok, _ = m.resume(FRESH, FRESH, 0, 0)
+        self.assertTrue(ok)
+        self.assertEqual(m.step(1.6, pose, FRESH, FRESH, 0, 0).state, State.RUNNING)
+
+    def test_off_when_zero(self):
+        m = new_mission(stall_s=0.0)
+        for i in range(100):
+            cmd = m.step(i * 0.1, Pose2D(0, 0, 0), FRESH, FRESH, 0, 0)
+        self.assertEqual(cmd.state, State.RUNNING)
 
 
 class TestAborts(unittest.TestCase):

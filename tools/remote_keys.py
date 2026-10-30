@@ -12,9 +12,10 @@ Rules, chosen so a stray press cannot start a walk:
     no gap in the stream. Fires once; the combo must be released to re-arm.
     Pressed again while the mission is paused, it resumes.
   * ABORT = the abort combo, OR L2+B (the robot's own damping stop, which the
-    operator already reaches for), OR L2+START (a walking-mode toggle on the
-    robot -- not a stop, but a sign the operator wants control), OR any stick
-    pushed past stick_abort. Fires on the press, no hold.
+    operator already reaches for), OR L2+START / L2+A (walking-mode and
+    stand/lie-down toggles on the robot -- not stops, but signs the operator
+    wants control), OR any stick pushed past stick_abort. Fires on the press,
+    no hold.
     Extra buttons do not mask an abort. Abort beats start in the same sample.
 
 Key bits follow unitree_sdk2's xKeySwitchUnion. They are verified on the
@@ -33,6 +34,10 @@ DEFAULT_START = "SELECT+UP"
 DEFAULT_ABORT = "SELECT+DOWN"
 HARD_STOP = "L2+B"          # damps: verified on the robot 2026-10-28
 MODE_TOGGLE = "L2+START"    # does NOT damp on the robot (2026-10-28)
+# Stand-lock / lie down. On 2026-10-31 the operator laid the robot down with
+# L2+A mid-run and the route kept commanding a walk: any L2 combo the
+# operator reaches for means "I'm taking over".
+STAND_TOGGLE = "L2+A"
 
 
 def decode(keys: int) -> frozenset:
@@ -58,7 +63,7 @@ class RemoteTrigger:
                  max_gap_s: float = 0.5) -> None:
         self.start = parse_combo(start)
         self.aborts = (parse_combo(abort), parse_combo(HARD_STOP),
-                       parse_combo(MODE_TOGGLE))
+                       parse_combo(MODE_TOGGLE), parse_combo(STAND_TOGGLE))
         for a in self.aborts:
             if a <= self.start:
                 raise ValueError(f"start combo {'+'.join(sorted(self.start))} contains "

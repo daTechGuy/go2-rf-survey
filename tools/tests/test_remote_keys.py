@@ -102,6 +102,11 @@ class TestAbort(unittest.TestCase):
         ev = run(RemoteTrigger(), [keys("L2", "B", "R1")] * 10)
         self.assertEqual([e for _, e in ev], ["abort"])   # once, not every sample
 
+    def test_lie_down_toggle_aborts(self):
+        # 2026-10-31: L2+A laid it down mid-run and the route kept going
+        ev = run(RemoteTrigger(), [keys("L2", "A")] * 10)
+        self.assertEqual([e for _, e in ev], ["abort"])
+
     def test_mode_toggle_also_aborts(self):
         # L2+START doesn't damp the robot, but still means "operator wants control"
         ev = run(RemoteTrigger(), [keys("L2", "START")] * 10)

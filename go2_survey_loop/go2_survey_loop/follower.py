@@ -21,7 +21,9 @@ precedence:
 2. **abort** -- past ``max_duration_s``, or further than ``geofence_m`` from
    the start. Odometry that has wandered off is not something to keep
    following.
-3. **pause** -- odometry stale, LiDAR stale (driving blind), or an obstacle.
+3. **pause** -- odometry stale, LiDAR stale (driving blind), an obstacle, or
+   **stalled**: motion commanded for ``stall_s`` without the robot moving
+   (lying down, swaying in place, held).
    A pause holds zero velocity and *stays* paused until ``resume()`` -- or,
    only for obstacles and only if ``auto_resume_s`` is set, until the way has
    been clear that long. Nothing about a pause clearing itself should surprise
@@ -47,10 +49,10 @@ from go2_survey_loop.geometry import Pose2D, wrap_angle
 class FollowerParams:
     max_vx: float = 0.30        # m/s -- deliberately half the bridge's ceiling
     # m/s while still short of a waypoint. The Go2 sways in place for slow
-    # walk requests too: on 2026-10-31 it stood 22 cm short of the turn-round
-    # point for 9 s, commanded 0.13 m/s, until aborted. The k_lin slow-down
-    # alone took it below the threshold.
-    min_vx: float = 0.20
+    # walk requests too: on 2026-10-31 it stood short of the turn-round point
+    # commanded 0.13 m/s, then (min_vx 0.2) again at 0.20 m/s. 0.3 walked
+    # every time, so it walks at that until the waypoint is reached.
+    min_vx: float = 0.30
     max_vyaw: float = 1.00      # rad/s
     # rad/s while turning in place. Was 0.15. On 2026-10-28 the Go2 (firmware
     # 'mcf') only swayed for gentle turn requests -- from the remote too --
@@ -74,6 +76,13 @@ class SafetyParams:
     min_obstacle_points: int = 5
     auto_resume_s: float = 0.0      # 0 = obstacles need an explicit resume
     tail_s: float = 1.0             # hold zero this long after DONE/ABORTED
+    # Pause if motion is commanded but the robot hasn't moved stall_move_m /
+    # stall_turn_rad in this long (0 = off). On 2026-10-31 the operator laid
+    # the robot down mid-run and the route kept commanding a walk for a
+    # minute: standing it up again would have walked it off.
+    stall_s: float = 5.0
+    stall_move_m: float = 0.05
+    stall_turn_rad: float = 0.09    # ~5 deg
 
 
 class State(str, Enum):
@@ -162,6 +171,7 @@ class Mission:
         self._turn_dir = 0.0            # +1 CCW / -1 CW once a turn starts
         self._ended_at: float | None = None
         self._clear_since: float | None = None
+        self._stall_ref = None          # (t, pose) when motion last made progress
 
     # ---------------------------------------------------------------- queries
 
@@ -195,6 +205,7 @@ class Mission:
         self.state = State.PAUSED
         self.reason = reason
         self._clear_since = None
+        self._stall_ref = None
         self._turning = False
         self._turn_dir = 0.0
         return Command(0.0, 0.0, True, State.PAUSED, reason)
@@ -302,5 +313,23 @@ class Mission:
                 pose, self.target, self.follow, self._turning, self.origin)
 
         vyaw = self._latch_turn(pose, vyaw)
+        if self._stalled(now, pose, vx, vyaw):
+            return self._pause(f"not moving for {s.stall_s:.0f}s -- stalled, "
+                               "or lying down? (resume when it can walk)")
         self.reason = self.progress()
         return Command(vx, vyaw, True, State.RUNNING, self.reason)
+
+    def _stalled(self, now: float, pose: Pose2D, vx: float, vyaw: float) -> bool:
+        s = self.safety
+        if s.stall_s <= 0 or (vx == 0.0 and vyaw == 0.0):
+            self._stall_ref = None
+            return False
+        if self._stall_ref is None:
+            self._stall_ref = (now, pose)
+            return False
+        t0, p0 = self._stall_ref
+        if math.hypot(pose.x - p0.x, pose.y - p0.y) >= s.stall_move_m \
+                or abs(wrap_angle(pose.yaw - p0.yaw)) >= s.stall_turn_rad:
+            self._stall_ref = (now, pose)
+            return False
+        return now - t0 >= s.stall_s
