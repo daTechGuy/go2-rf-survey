@@ -6,7 +6,9 @@
 #   bash tools/demo.sh --length 3.0 --rehearse                # NOTHING MOVES
 #   bash tools/demo.sh --explore --i-confirm-breathing        # no route: it picks
 #                   its own way into open space it hasn't seen, then walks home
-#                   (--legs N, default 8; --radius R m from the start, default 4)
+#                   (--legs N, default 8; --radius R m from the start, default 4;
+#                   --leg-max M m per leg, default 1.5)
+#   --minutes N     time limit for the run, default 5 (a big hall: 15)
 #
 # Options: --shape out_and_back|rectangle  --width W (rectangle)
 #          --backend sport|sport_prep|avoid  --name NAME  --no-viz  --no-map
@@ -42,7 +44,7 @@ cd "$REPO" || exit 1
 G="bash $REPO/tools/go2loop.sh"
 
 LENGTH=""; WIDTH=""; SHAPE=out_and_back; BACKEND=sport; NAME=demo
-EXPLORE=0; LEGS=8; RADIUS=4.0
+EXPLORE=0; LEGS=8; RADIUS=4.0; LEG_MAX=1.5; MINUTES=5
 BREATHING=0; REHEARSE=0; VIZ=1; MAP=1; SKIP_GATE=0
 DETACH_RUN=0; REMOTE=0; WAIT=600
 ARGS=("$@")
@@ -58,6 +60,8 @@ while [ $# -gt 0 ]; do
     --explore) EXPLORE=1; shift ;;
     --legs) LEGS="$2"; shift 2 ;;
     --radius) RADIUS="$2"; shift 2 ;;
+    --leg-max) LEG_MAX="$2"; shift 2 ;;
+    --minutes) MINUTES="$2"; shift 2 ;;
     --backend) BACKEND="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
     --i-confirm-breathing) BREATHING=1; shift ;;
@@ -201,13 +205,17 @@ echo "== loop"
 if [ "$EXPLORE" = 1 ]; then
   # wider stops than a route's: exploring a classroom brushed a podium and a
   # desk with the route's 0.55 m ring / 0.5 m stop / 0.35 m lane (2026-10-31)
-  LOOP_ARGS="-p shape:=explore -p explore_legs:=$LEGS -p explore_radius:=$RADIUS -p dry_run:=$DRY"
+  # ROS parameters are typed: --radius 10 must reach the node as 10.00
+  LOOP_ARGS="-p shape:=explore -p explore_legs:=$LEGS -p dry_run:=$DRY"
+  LOOP_ARGS="$LOOP_ARGS -p explore_radius:=$(printf %.2f "$RADIUS")"
+  LOOP_ARGS="$LOOP_ARGS -p explore_leg_max:=$(printf %.2f "$LEG_MAX")"
   LOOP_ARGS="$LOOP_ARGS -p clearance_radius:=0.70 -p stop_distance:=0.70 -p lane_half_width:=0.45"
   LOOP_ARGS="$LOOP_ARGS -p turn_clearance:=0.70"
 else
   LOOP_ARGS="-p shape:=$SHAPE -p length:=$LENGTH -p dry_run:=$DRY"
   [ -n "$WIDTH" ] && LOOP_ARGS="$LOOP_ARGS -p width:=$WIDTH"
 fi
+LOOP_ARGS="$LOOP_ARGS -p max_duration_s:=$((MINUTES * 60)).0"
 $G up $LOOP_ARGS || bail "loop node did not start"
 
 # what the remote trigger did (e.g. a start the loop refused: path blocked)
@@ -243,7 +251,8 @@ else
 fi
 
 # ---- watch ------------------------------------------------------------------
-if [ "$REHEARSE" = 1 ]; then LIMIT=15; else LIMIT=360; fi
+# the loop's own limit ends the mission; this one only stops watching after it
+if [ "$REHEARSE" = 1 ]; then LIMIT=15; else LIMIT=$((MINUTES * 60 + 60)); fi
 deadline=$(( $(date +%s) + LIMIT ))
 prev=""; state=""; paused_hint=0
 while [ "$(date +%s)" -lt "$deadline" ]; do

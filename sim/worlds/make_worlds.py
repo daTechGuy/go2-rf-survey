@@ -15,6 +15,9 @@ classroom.world   -- field guide 02: the robot starts in the doorway at the
 furnished.world   -- exploration: a 9 x 7 m room, tables, chairs and a
                      cupboard placed at random from --layout N (furniture
                      that moves between runs), robot at the origin.
+hall.world        -- exploration at scale: a 25 x 20 m hall, seven rows of
+                     desks with aisles, a podium, chairs; --layout N moves
+                     and removes some.
 
 Coordinates: x forward from the start, y to the left, metres. Gazebo spawns
 the robot at the origin (sim/run_sim.sh), so the route geometry here
@@ -119,6 +122,37 @@ def furnished(layout: int) -> str:
     return HEADER.format(name=f"furnished layout {layout}") + "".join(parts) + FOOTER
 
 
+def hall(layout: int) -> str:
+    """A 25 x 20 m hall: rows of desks with aisles, a podium at the front,
+    chairs and a few desks moved or missing at random from ``layout``. The
+    robot starts at the origin, 1.5 m in from the near wall, facing +x down
+    the room. For exploring a big space with desks."""
+    import random
+    rng = random.Random(layout)
+    x0, x1, y0, y1 = -1.5, 23.5, -10.0, 10.0
+    parts = walls(x0, x1, y0, y1)
+    parts.append(box("podium", 1.0, 6.5, 0.8, 0.6, 1.1, "0.4 0.3 0.25"))
+    n = 0
+    # desk rows across the room: 1.2 x 0.6 m desks, 2 m aisles between rows,
+    # a 2.5 m centre aisle and 2 m walkways along the side walls
+    for row, x in enumerate([4.0, 6.6, 9.2, 11.8, 14.4, 17.0, 19.6]):
+        for side in (1, -1):
+            y = side * 1.85
+            while abs(y) + 0.6 <= y1 - 2.0:
+                if rng.random() > 0.12:                       # some desks missing
+                    jx, jy = rng.uniform(-0.25, 0.25), rng.uniform(-0.15, 0.15)
+                    parts.append(box(f"desk_{n}", x + jx, y + jy, 0.6, 1.2, 0.75, "0.55 0.4 0.25"))
+                    if rng.random() > 0.5:                    # a chair behind it
+                        parts.append(box(f"chair_{n}", x + jx - 0.6, y + jy, 0.45, 0.45, 0.9,
+                                         "0.3 0.3 0.35"))
+                    n += 1
+                y += side * 1.3
+    for i in range(4):                                        # chairs left in the aisles
+        parts.append(box(f"stray_{i}", rng.uniform(3, 21), rng.uniform(-8, 8),
+                         0.45, 0.45, 0.9, "0.3 0.3 0.35"))
+    return HEADER.format(name=f"hall layout {layout}") + "".join(parts) + FOOTER
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--aisle", type=float, default=1.2, help="clear aisle width, m")
@@ -134,6 +168,7 @@ def main(argv=None) -> int:
     (a.out / "classroom.world").write_text(
         classroom(a.aisle, a.aisle_length, a.room_length, a.room_width))
     (a.out / "furnished.world").write_text(furnished(a.layout))
+    (a.out / "hall.world").write_text(hall(a.layout))
     print(f"wrote {a.out / 'small_room.world'} (box={'yes' if a.box else 'no'}), "
           f"{a.out / 'classroom.world'} (aisle {a.aisle} m) and "
           f"{a.out / 'furnished.world'} (layout {a.layout})")
