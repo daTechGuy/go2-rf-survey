@@ -7,6 +7,7 @@ They assume nothing is set up and nothing is remembered from last time.
 |---|---|---|
 | **[01 — Small-room test](01-small-room-test.md)** | **First.** Unpack to pack-up: power, connect, check every safety piece, ending with a 1 m autonomous walk and a floorplan of the room. | ~90 min |
 | [03 — Turn diagnosis](03-turn-diagnosis.md) | **Done (2026-10-28)**, kept as a record: why the first turn tests failed (the Go2 sways for gentle turns). Guide 01 then reached step L: the first autonomous 1 m walk. | — |
+| **[04 — Explore a room](04-explore-a-room.md)** | After 01's 1 m walk. No route: the robot walks into open space it hasn't seen, then home, and maps the room — for rooms whose furniture moves. | ~15 min |
 | [02 — Classroom demo](02-classroom-demo.md) | Only after 01 has worked once. The 3 m (10 ft) route from the classroom door, mapping the room, with people watching. | ~45 min before the audience, ~5 min demo |
 
 The engineering detail behind these steps is in

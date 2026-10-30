@@ -323,6 +323,39 @@ live view shows the room appear on the laptop as it walks; at the end it
 builds the floorplan and prints the `scp` line to fetch it. Add
 `--backend avoid` only after the avoid-backend gate above has passed.
 
+## Exploration — no route (`--explore`)
+
+```bash
+bash tools/demo.sh --explore --i-confirm-breathing --remote-start --detach   # --legs 8 --radius 4
+```
+For rooms whose layout changes (`go2_survey_loop/explore.py`, loop
+`shape:=explore`). Between legs the robot stands still and scores 16
+directions on the latest LiDAR obstacle points: clear distance along a
+corridor wider than the 0.55 m ring, a leg of at most 1.5 m that stops 1 m
+short of anything ahead **and** ends 0.8 m from anything in any direction (so
+it can turn there), within `radius` of the start, preferring ends far from
+everywhere it has walked and needing little turning. Each leg is walked by the
+ordinary follower (one waypoint), with every stop above. Blocked mid-leg: it
+stands 1 s, then re-plans. After `legs` legs, or when nothing is open, it
+retraces where its legs began to get home (walked lines, so passable); a turn
+point it can't quite reach because of something just beyond it counts as
+reached within 0.6 m; otherwise blocked on the way home waits for the remote.
+The time limit and the geofence (`radius` + margin) cover the whole run. The
+stage gate treats it as a route of length `radius` (needs Stage 2 today).
+
+Sim (2026-10-31), furnished room with random furniture (`LAYOUT=1..3 bash
+sim/run_sim.sh up furnished`), robot turning at half the commanded rate: 3 of 3
+done — 8, 4 and 8 legs, home within 0.12–0.14 m. The first version stalled in
+one layout: legs ended with a chair inside the turn ring, hence the 0.8 m
+end clearance.
+
+Two follower changes came with it and apply to routes too: something in the
+forward lane stops **walking forward** only, not a turn on the spot (only the
+0.55 m ring does — that is what a turn sweeps), so a robot facing a wall can
+turn away; and a **stall check** pauses any run where motion is commanded but
+the robot hasn't moved 5 cm / 5° in 5 s (it was once laid down mid-run and the
+route kept commanding a walk). Off in dry runs.
+
 ## Untethered — no cable during the run
 
 Everything that keeps the robot safe runs on the robot: the obstacle stop,

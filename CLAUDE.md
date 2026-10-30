@@ -54,7 +54,13 @@ meaningless on this firmware. A hand-driven map of the room worked.
 `demo finished: done` in 22 s, 0.19 m from the start, floorplan built.
 Stage 2 passed.
 
-**Next action:** the 3 m route, then the classroom (guide 02). Each session:
+**2026-10-31:** 1 m runs stalled in the forward sway zone (≤0.2 m/s), then
+passed at a steady 0.3 m/s; stall check + L2+A abort added after the robot
+was laid down mid-run while the route kept commanding. **Exploration built**
+(`demo.sh --explore`, guide 04): 3 of 3 sim rooms done, not yet on the robot.
+
+**Next action:** guide 04 on the robot (turn test, 1 m walk, then explore).
+Then the 3 m route / classroom (guide 02). Each session:
 route (user sudo) → preflight → `bridge-up` + `turn-test --i-confirm-breathing`
 (defaults to the 1.0 rad/s × 0.5 s turn that passes) → [ASK] demo. Robot-side
 state that resets each boot: `sudo ip route replace default via
