@@ -173,6 +173,13 @@ class TestGrid(unittest.TestCase):
         cost, _ = coverage.costs_from(g, g.cell_of(0, 0), g.clearance(), 0.0)
         self.assertNotIn(g.cell_of(0.0, 1.0), cost)
 
+    def test_line_of_sight(self):
+        g = Grid(0, 0, 3.0, 0.25)
+        g.mark(obstacle_xy=[(1.0, y / 10) for y in range(-5, 6)] * 2)   # a desk side-on
+        a, behind, beside = g.cell_of(0, 0), g.cell_of(2.0, 0), g.cell_of(0, 2.0)
+        self.assertFalse(coverage.sees(g, a, behind))
+        self.assertTrue(coverage.sees(g, a, beside))          # unknown doesn't block
+
     def test_truncate(self):
         out = coverage.truncate([(2.0, 0.0), (2.0, 3.0)], (0.0, 0.0), 3.0)
         self.assertEqual(out[0], (2.0, 0.0))
@@ -245,6 +252,17 @@ class TestStuck(unittest.TestCase):
             m.step(i * DT, Pose2D(0, 0, 0), FRESH, FRESH, 0, 9, hall())
         cmd = m.step(10.1, Pose2D(0, 0, 0), FRESH, FRESH, 0, 0, hall())
         self.assertEqual(cmd.state, State.RUNNING)
+
+
+class TestNothingLeftToSee(unittest.TestCase):
+    def test_room_seen_whole_from_the_start_is_done_not_a_failure(self):
+        # sim furnished room: from the start the LiDAR saw nearly all of it,
+        # and the first version ended "nowhere open to explore" (aborted)
+        room = box(-1.5, -2.5, 4.0, 2.5)
+        m = mission()
+        _, log, _ = run(m, room, steps=600)
+        self.assertEqual(m.state, State.DONE, m.reason)
+        self.assertLess(walked(log), 3.0)
 
 
 class TestFrontierStart(unittest.TestCase):

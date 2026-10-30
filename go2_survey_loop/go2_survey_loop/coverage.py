@@ -203,6 +203,19 @@ def simplify(grid: Grid, clear: dict, cells, min_clearance: float):
     return out
 
 
+def sees(grid: Grid, a, b) -> bool:
+    """No OCC cell on the straight line between cells ``a`` and ``b``: from
+    ``a`` the LiDAR could see ``b`` (unknown cells don't block -- they may be
+    floor nobody has looked at yet)."""
+    (ai, aj), (bi, bj) = a, b
+    steps = max(abs(bi - ai), abs(bj - aj), 1) * 2
+    for k in range(1, steps):
+        c = (round(ai + (bi - ai) * k / steps), round(aj + (bj - aj) * k / steps))
+        if c != b and grid.state(c) == OCC:
+            return False
+    return True
+
+
 def truncate(waypoints, start, max_len: float):
     """Cut a waypoint list after ``max_len`` metres of path from ``start``."""
     out, px, py, left = [], start[0], start[1], max_len

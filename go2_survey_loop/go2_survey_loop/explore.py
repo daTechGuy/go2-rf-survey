@@ -91,6 +91,11 @@ class ExploreParams:
     # drifted to 0.62 m from a desk corner, inside the ring, and was stuck.
     path_clearance: float = 0.95    # m
     stuck_s: float = 20.0           # something inside the ring this long: end the run
+    # Unseen floor is mostly in the shadow right behind furniture, too close to
+    # it to stand on. Go to a viewpoint instead: a safe cell within view_dist
+    # of the patch. Sim furnished room: aiming at the patch itself found
+    # "nowhere open to explore" before the first step.
+    view_dist: float = 2.0          # m
 
 
 @dataclass(frozen=True)
@@ -194,7 +199,7 @@ class ExploreMission:
         self._latched = False           # paused for a reason only resume() clears
         self.grid = coverage.Grid(start.x, start.y, explore.radius + 1.5, explore.grid_cell)
         self.observations = 0
-        self._failed_goals: list = []   # frontier goals it was blocked short of
+        self._spent_goals: list = []   # goals reached or blocked short of: not again
         self._near_since: float | None = None
 
     def _stuck(self, now: float, near: int) -> bool:
@@ -226,16 +231,27 @@ class ExploreMission:
             return None
         clear = g.clearance()
         cost, parent = coverage.costs_from(g, here, clear, p.path_clearance)
+        # where it may stop: reachable, with room to turn round
+        stands = [c for c in cost if clear.get(c, 3.0) >= p.end_clearance]
+        view = p.view_dist / g.cell
         best = None
         for patch in g.frontiers(p.frontier_min_cells):
-            goals = [c for c in patch if c in cost and clear.get(c, 3.0) >= p.end_clearance]
-            if not goals:
+            ci = sum(c[0] for c in patch) / len(patch)
+            cj = sum(c[1] for c in patch) / len(patch)
+            mid = min(patch, key=lambda c: (c[0] - ci) ** 2 + (c[1] - cj) ** 2)
+            # the cheapest place to stand that can actually see into it
+            goal = None
+            for c in sorted((c for c in stands if math.hypot(c[0] - ci, c[1] - cj) <= view),
+                            key=cost.get):
+                if coverage.sees(g, c, mid):
+                    goal = c
+                    break
+            if goal is None:
                 continue
-            goal = min(goals, key=cost.get)
             gx, gy = g.centre(goal)
             if math.hypot(gx - self.start.x, gy - self.start.y) > p.radius:
                 continue
-            if any(math.hypot(gx - fx, gy - fy) < 1.0 for fx, fy in self._failed_goals):
+            if any(math.hypot(gx - fx, gy - fy) < 1.0 for fx, fy in self._spent_goals):
                 continue
             if cost[goal] < 2 * p.grid_cell:            # already standing on it
                 continue
@@ -385,6 +401,11 @@ class ExploreMission:
                                    f"{math.degrees(leg.heading_rel):+.0f} deg")
             if self.leg is None:
                 if not self.leg_starts:
+                    if frontier and can_turn:
+                        # nothing unseen it can reach a view of: the room was
+                        # mapped from where it stands -- that's a result
+                        return self._end(State.DONE, "everything reachable already seen "
+                                         "from the start", now)
                     return self._end(State.ABORTED, "nowhere open to explore", now)
                 if not can_turn:
                     return self._hold("no room to turn to head home -- move me, or resume",
@@ -396,6 +417,7 @@ class ExploreMission:
         if cmd.state == State.DONE:
             if self.phase == "home":
                 return self._end(State.DONE, f"explored {self.legs_done} legs, home", now)
+            self._spent_goals.append(self.leg.waypoints[-1])     # stood there: not again
             self.legs_done += 1
             self.leg, self._hold_since = None, None
             return Command(0.0, 0.0, True, State.RUNNING, self.progress())
@@ -418,7 +440,7 @@ class ExploreMission:
                     self._hold_since = now
                 if now - self._hold_since >= self.p.replan_hold_s \
                         and near < s.min_obstacle_points:
-                    self._failed_goals.append(self.leg.waypoints[-1])   # don't aim there again
+                    self._spent_goals.append(self.leg.waypoints[-1])   # blocked short of it: not again
                     self.legs_done += 1
                     self.leg, self._hold_since = None, None
                     self.state = State.RUNNING
