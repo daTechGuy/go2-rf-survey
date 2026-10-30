@@ -328,6 +328,34 @@ class TestPauses(unittest.TestCase):
         self.assertEqual((cmd.vx, cmd.vyaw), (0.0, 0.0))
         self.assertTrue(cmd.publish)
 
+    def test_front_lane_does_not_stop_a_turn_on_the_spot(self):
+        # facing a wall with the next waypoint behind: it must be able to turn
+        m = Mission([(-2.0, 0.0)], Pose2D(0, 0, 0), 0.0, FP, SafetyParams())
+        cmd = m.step(0.0, Pose2D(0, 0, 0), FRESH, FRESH, front=50, near=0)
+        self.assertEqual(cmd.state, State.RUNNING)
+        self.assertEqual(cmd.vx, 0.0)
+        self.assertNotEqual(cmd.vyaw, 0.0)
+
+    def test_ring_stops_a_turn_on_the_spot(self):
+        m = Mission([(-2.0, 0.0)], Pose2D(0, 0, 0), 0.0, FP, SafetyParams())
+        cmd = m.step(0.0, Pose2D(0, 0, 0), FRESH, FRESH, front=0, near=50)
+        self.assertEqual(cmd.state, State.PAUSED)
+
+    def test_skip_waypoint_only_from_a_pause_with_the_ring_clear(self):
+        m = new_mission()
+        self.assertFalse(m.skip_waypoint(0.0, 0))           # not paused
+        m.step(0.0, Pose2D(0, 0, 0), FRESH, FRESH, 10, 0)   # walking into something
+        self.assertEqual(m.state, State.PAUSED)
+        self.assertFalse(m.skip_waypoint(0.1, 50))          # someone beside it
+        self.assertTrue(m.skip_waypoint(0.1, 0))
+        self.assertEqual((m.state, m.index), (State.RUNNING, 1))
+
+    def test_skip_last_waypoint_is_done(self):
+        m = Mission([(1.0, 0.0)], Pose2D(0, 0, 0), 0.0, FP, SafetyParams())
+        m.step(0.0, Pose2D(0, 0, 0), FRESH, FRESH, 10, 0)
+        self.assertTrue(m.skip_waypoint(0.1, 0))
+        self.assertEqual(m.state, State.DONE)
+
     def test_obstacle_below_threshold_ignored(self):
         m = new_mission(min_obstacle_points=5)
         cmd = m.step(0.0, Pose2D(0, 0, 0), FRESH, FRESH, front=4, near=0)

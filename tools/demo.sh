@@ -4,6 +4,9 @@
 #   bash tools/demo.sh --length 1.0 --i-confirm-breathing     # Stage 2
 #   bash tools/demo.sh --length 3.0 --i-confirm-breathing     # the classroom route
 #   bash tools/demo.sh --length 3.0 --rehearse                # NOTHING MOVES
+#   bash tools/demo.sh --explore --i-confirm-breathing        # no route: it picks
+#                   its own way into open space it hasn't seen, then walks home
+#                   (--legs N, default 8; --radius R m from the start, default 4)
 #
 # Options: --shape out_and_back|rectangle  --width W (rectangle)
 #          --backend sport|sport_prep|avoid  --name NAME  --no-viz  --no-map
@@ -39,6 +42,7 @@ cd "$REPO" || exit 1
 G="bash $REPO/tools/go2loop.sh"
 
 LENGTH=""; WIDTH=""; SHAPE=out_and_back; BACKEND=sport; NAME=demo
+EXPLORE=0; LEGS=8; RADIUS=4.0
 BREATHING=0; REHEARSE=0; VIZ=1; MAP=1; SKIP_GATE=0
 DETACH_RUN=0; REMOTE=0; WAIT=600
 ARGS=("$@")
@@ -51,6 +55,9 @@ while [ $# -gt 0 ]; do
     --length) LENGTH="$2"; shift 2 ;;
     --width) WIDTH="$2"; shift 2 ;;
     --shape) SHAPE="$2"; shift 2 ;;
+    --explore) EXPLORE=1; shift ;;
+    --legs) LEGS="$2"; shift 2 ;;
+    --radius) RADIUS="$2"; shift 2 ;;
     --backend) BACKEND="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
     --i-confirm-breathing) BREATHING=1; shift ;;
@@ -62,7 +69,11 @@ while [ $# -gt 0 ]; do
     *) echo "unknown option: $1" >&2; usage ;;
   esac
 done
-[ -n "$LENGTH" ] || { echo "--length is required" >&2; usage; }
+if [ "$EXPLORE" = 1 ]; then
+  # the stage gate judges by distance: exploring reaches up to --radius
+  SHAPE=explore; LENGTH="$RADIUS"
+fi
+[ -n "$LENGTH" ] || { echo "--length is required (or --explore)" >&2; usage; }
 case "$BACKEND" in sport|sport_prep|avoid) ;; *) echo "--backend must be sport, sport_prep or avoid" >&2; exit 2 ;; esac
 
 STAMP="${DEMO_STAMP:-$(date +%Y%m%d_%H%M%S)}"   # the detached child keeps the parent's
@@ -79,7 +90,11 @@ fi
 
 # ---- cheap refusals first: nothing has been started yet --------------------
 if [ "$REHEARSE" = 0 ]; then
-  echo "== LIVE run: the robot will walk a ${LENGTH} m ${SHAPE} on its own (backend ${BACKEND})"
+  if [ "$EXPLORE" = 1 ]; then
+    echo "== LIVE run: the robot will explore on its own, up to $LEGS legs within ${RADIUS} m, then walk home (backend ${BACKEND})"
+  else
+    echo "== LIVE run: the robot will walk a ${LENGTH} m ${SHAPE} on its own (backend ${BACKEND})"
+  fi
   if [ "$BREATHING" = 0 ]; then
     echo "REFUSED: confirm walking mode first -- remote L2+A then a SINGLE START, body"
     echo "         visibly balancing -- then add --i-confirm-breathing"; exit 2
@@ -173,8 +188,12 @@ else
 fi
 
 echo "== loop"
-LOOP_ARGS="-p shape:=$SHAPE -p length:=$LENGTH -p dry_run:=$DRY"
-[ -n "$WIDTH" ] && LOOP_ARGS="$LOOP_ARGS -p width:=$WIDTH"
+if [ "$EXPLORE" = 1 ]; then
+  LOOP_ARGS="-p shape:=explore -p explore_legs:=$LEGS -p explore_radius:=$RADIUS -p dry_run:=$DRY"
+else
+  LOOP_ARGS="-p shape:=$SHAPE -p length:=$LENGTH -p dry_run:=$DRY"
+  [ -n "$WIDTH" ] && LOOP_ARGS="$LOOP_ARGS -p width:=$WIDTH"
+fi
 $G up $LOOP_ARGS || bail "loop node did not start"
 
 # what the remote trigger did (e.g. a start the loop refused: path blocked)
@@ -242,7 +261,7 @@ cleanup
 trap - INT TERM
 
 # ---- record stage 2 / build the map -------------------------------------------
-if [ "$REHEARSE" = 0 ] && [ "$state" = "done" ] && \
+if [ "$REHEARSE" = 0 ] && [ "$state" = "done" ] && [ "$EXPLORE" = 0 ] && \
    python3 -c "import sys; sys.exit(0 if float('$LENGTH') <= 1.0 else 1)"; then
   python3 "$REPO/tools/stage_gate.py" record-stage2 --backend "$BACKEND" --dir "$HOME/surveys"
 fi

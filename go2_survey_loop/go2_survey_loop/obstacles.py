@@ -71,6 +71,21 @@ def classify(points, pose: Pose2D, floor_z: float, p: ObstacleParams = ObstacleP
     return front, near
 
 
+def obstacle_xy(points, pose: Pose2D, floor_z: float, p: ObstacleParams = ObstacleParams(),
+                max_range: float = 8.0):
+    """(x, y) in the odometry frame of every point in the obstacle height band
+    within ``max_range`` of the robot -- what exploration plans around
+    (explore.py). The robot's own footprint is dropped there, against the
+    pose at planning time."""
+    r2 = max_range * max_range
+    out = []
+    for x, y, z in points:
+        h = z - floor_z
+        if p.z_min <= h <= p.z_max and (x - pose.x) ** 2 + (y - pose.y) ** 2 <= r2:
+            out.append((x, y))
+    return out
+
+
 def floor_from_scan(points, pose: Pose2D, radius: float = 2.0,
                     percentile: float = 2.0, min_points: int = 50):
     """Floor height from the low tail of z near the robot, or None if the

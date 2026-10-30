@@ -45,11 +45,14 @@ from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
+from go2_survey_loop.explore import ExploreMission, ExploreParams
 from go2_survey_loop.follower import FollowerParams, Mission, SafetyParams, State
 from go2_survey_loop.geometry import (
     Pose2D, plan_local, route_extent, to_world, yaw_from_quaternion,
 )
-from go2_survey_loop.obstacles import ObstacleParams, classify, floor_from_scan, median
+from go2_survey_loop.obstacles import (
+    ObstacleParams, classify, floor_from_scan, median, obstacle_xy,
+)
 
 _POINTFIELD = {1: "i1", 2: "u1", 3: "i2", 4: "u2", 5: "i4", 6: "u4", 7: "f4", 8: "f8"}
 
@@ -81,7 +84,11 @@ class LoopNode(Node):
     def __init__(self) -> None:
         super().__init__("go2_loop")
         d = self.declare_parameter
-        d("shape", "rectangle")             # or "out_and_back"
+        d("shape", "rectangle")             # or "out_and_back", or "explore" (no route:
+                                            # greedy legs into open space, then home)
+        d("explore_legs", 8)
+        d("explore_leg_max", 1.5)           # m
+        d("explore_radius", 4.0)            # m from the start; geofence = this + margin
         d("length", 0.0)
         d("width", 0.0)
         d("turn", "left")
@@ -132,6 +139,7 @@ class LoopNode(Node):
         self._odom_frame = ""
         self._cloud_t: float | None = None
         self._front = self._near = 0
+        self._obst_scans: deque = deque(maxlen=3)   # recent scans' obstacle (x, y), for explore
         self._floor_hist: deque = deque(maxlen=15)
         self._frame_warned = False
         self.mission: Mission | None = None
@@ -151,11 +159,15 @@ class LoopNode(Node):
 
         mode = "DRY RUN -- nothing will be published" if self.dry_run \
             else f"LIVE -- publishing {g('cmd_vel_topic')}"
+        route = (f"explore: {g('explore_legs')} legs of <= {g('explore_leg_max')} m "
+                 f"within {g('explore_radius')} m, then home"
+                 if g("shape") == "explore" else
+                 f"route {g('shape')}: length {g('length')} m"
+                 + (f", width {g('width')} m, turn {g('turn')}" if g("shape") == "rectangle" else "")
+                 + f", laps {g('laps')}")
         self.get_logger().info(
             f"go2_loop up, {mode}\n"
-            f"  route {g('shape')}: length {g('length')} m"
-            + (f", width {g('width')} m, turn {g('turn')}" if g("shape") == "rectangle" else "")
-            + f", laps {g('laps')}\n"
+            f"  {route}\n"
             f"  speed <= {self.follow.max_vx} m/s, {self.follow.max_vyaw} rad/s; "
             f"stop {self.obst.stop_distance} m ahead / {self.obst.clearance_radius} m around\n"
             f"  waiting for ~/start")
@@ -192,6 +204,9 @@ class LoopNode(Node):
         if floor_z is None:
             return                          # can't tell floor from obstacle yet
         self._front, self._near = classify(pts, pose, floor_z, self.obst)
+        if self.get_parameter("shape").value == "explore":
+            # kept from before ~/start too: the first leg is planned at once
+            self._obst_scans.append(obstacle_xy(pts, pose, floor_z, self.obst))
         self._cloud_t = self._now()
 
     def _ages(self, now: float):
@@ -224,7 +239,11 @@ class LoopNode(Node):
             return
 
         m = self.mission
-        cmd = m.step(now, self._pose, oa, ca, self._front, self._near)
+        if isinstance(m, ExploreMission):
+            obst = [p for scan in self._obst_scans for p in scan]
+            cmd = m.step(now, self._pose, oa, ca, self._front, self._near, obst)
+        else:
+            cmd = m.step(now, self._pose, oa, ca, self._front, self._near)
         if cmd.publish:
             self._publish(cmd.vx, cmd.vyaw)
 
@@ -267,28 +286,43 @@ class LoopNode(Node):
         if self._front >= k or self._near >= k:
             problems.append(f"path blocked (front={self._front}, near={self._near})")
         shape = str(g("shape"))
-        try:
-            local = plan_local(shape, float(g("length")), float(g("width")),
-                               str(g("turn")), int(g("laps")))
-        except ValueError as exc:
-            problems.append(str(exc))
+        local = []
+        if shape == "explore":
+            if not self._obst_scans:
+                problems.append("no LiDAR obstacle picture yet")
+        else:
+            try:
+                local = plan_local(shape, float(g("length")), float(g("width")),
+                                   str(g("turn")), int(g("laps")))
+            except ValueError as exc:
+                problems.append(str(exc))
         if problems:
             res.success, res.message = False, "refused: " + "; ".join(problems)
             self.get_logger().warning(res.message)
             return res
 
         start = self._pose
+        extent = (float(g("explore_radius")) if shape == "explore"
+                  else route_extent(shape, g("length"), g("width")))
         safety = SafetyParams(
             odom_timeout_s=g("odom_timeout_s"), cloud_timeout_s=g("cloud_timeout_s"),
             max_duration_s=g("max_duration_s"),
-            geofence_m=route_extent(shape, g("length"), g("width")) + g("geofence_margin_m"),
+            geofence_m=extent + g("geofence_margin_m"),
             min_obstacle_points=k, auto_resume_s=g("auto_resume_s"),
-            stall_s=g("stall_s"))
-        self.mission = Mission(to_world(start, local), start, now, self.follow, safety)
+            # a dry run publishes nothing, so the robot never moves: not a stall
+            stall_s=0.0 if self.dry_run else g("stall_s"))
+        if shape == "explore":
+            ep = ExploreParams(legs=int(g("explore_legs")), leg_max=float(g("explore_leg_max")),
+                               radius=float(g("explore_radius")))
+            self.mission = ExploreMission(start, now, self.follow, safety, ep, self.obst)
+            what = f"exploring {ep.legs} legs within {ep.radius:.1f} m"
+        else:
+            self.mission = Mission(to_world(start, local), start, now, self.follow, safety)
+            what = f"{len(local)} waypoints"
         self._last_state = None
         mode = "DRY RUN (nothing published)" if self.dry_run else "LIVE"
         res.success = True
-        res.message = (f"started {mode}: {len(local)} waypoints from "
+        res.message = (f"started {mode}: {what} from "
                        f"({start.x:.2f}, {start.y:.2f}) heading {math.degrees(start.yaw):.0f} deg")
         self.get_logger().info(res.message)
         return res

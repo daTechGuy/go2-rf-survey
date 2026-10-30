@@ -235,6 +235,21 @@ class Mission:
     def abort(self, now: float, reason: str = "stopped by operator") -> Command:
         return self._end(State.ABORTED, reason, now)
 
+    def skip_waypoint(self, now: float, near: int) -> bool:
+        """Paused by something just beyond the current waypoint: count the
+        waypoint as reached and carry on to the next (DONE after the last).
+        Only from a pause, only with nothing inside the clearance ring. Used
+        by exploration on its way home (explore.py); a route never calls it."""
+        if self.state != State.PAUSED or near >= self.safety.min_obstacle_points:
+            return False
+        self.index += 1
+        self._turning, self._turn_dir, self._stall_ref = False, 0.0, None
+        if self.index >= len(self.waypoints):
+            self._end(State.DONE, "loop complete", now)
+        else:
+            self.state, self.reason = State.RUNNING, "skipped a waypoint by an obstacle"
+        return True
+
     def resume(self, odom_age: float, cloud_age: float, front: int, near: int):
         """Operator resume. Returns (ok, message). Refuses unless it is
         currently safe to move -- resuming into an obstacle is not a resume."""
@@ -278,13 +293,16 @@ class Mission:
         fresh = pose is not None and odom_age <= s.odom_timeout_s \
             and cloud_age <= s.cloud_timeout_s
 
-        # 3. pause
+        # 3. pause. Something inside the clearance ring stops everything; the
+        # front lane only stops walking forward (checked below, once the
+        # command is known): a turn on the spot sweeps the ring, not the lane,
+        # and must stay possible -- a robot facing a wall has to turn away.
         if self.state == State.RUNNING:
             if pose is None or odom_age > s.odom_timeout_s:
                 return self._pause("odometry stale")
             if cloud_age > s.cloud_timeout_s:
                 return self._pause("lidar stale -- driving blind")
-            if blocked:
+            if near >= s.min_obstacle_points:
                 return self._pause(f"obstacle (front={front}, near={near})")
 
         if self.state == State.PAUSED:
@@ -313,6 +331,8 @@ class Mission:
                 pose, self.target, self.follow, self._turning, self.origin)
 
         vyaw = self._latch_turn(pose, vyaw)
+        if vx > 0.0 and front >= s.min_obstacle_points:
+            return self._pause(f"obstacle (front={front}, near={near})")
         if self._stalled(now, pose, vx, vyaw):
             return self._pause(f"not moving for {s.stall_s:.0f}s -- stalled, "
                                "or lying down? (resume when it can walk)")
