@@ -48,5 +48,16 @@ move, the run pauses itself within 5 seconds.
 6. [ ] When it stands still back near the start (or after 5 minutes, the time
    limit): lie it down, plug in, tell Claude. Claude shows the floorplan.
 
+## D. Copy the results to the laptop (before unplugging for the day)
+
+In a **normal** laptop PowerShell window:
+```powershell
+cd $HOME\go2-rf-survey
+python tools\get_results.py
+```
+Floorplans and logs first, the big recordings last, into
+`C:\Users\<you>\go2-surveys`. Cut off half-way? Plug back in and run it again:
+it carries on. `--no-recordings` for just the maps (seconds, not minutes).
+
 Options (Claude adds them): `--legs N` (default 8), `--radius R` metres from
 the start (default 4).

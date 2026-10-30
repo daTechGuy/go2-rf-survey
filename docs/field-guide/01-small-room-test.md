@@ -363,8 +363,13 @@ Proves it stops for something in its path, and waits.
    ```
    Copy the exact name from the `results` output. Open the PNG: it's the room
    seen from above.
-4. [ ] To keep the whole run, including the raw recording: the `whole run:` line
-   from `results` (it can be a few hundred MB).
+4. [ ] To keep everything from the week, raw recordings included, in one go
+   (it carries on where it stopped if the cable comes out):
+   ```powershell
+   cd $HOME\go2-rf-survey
+   python tools\get_results.py
+   ```
+   Into `C:\Users\<you>\go2-surveys`. `--no-recordings` for just maps and logs.
 
 ## O. Shut down and pack
 
