@@ -12,6 +12,9 @@ classroom.world   -- field guide 02: the robot starts in the doorway at the
                      for its first ``--aisle-length`` metres; open floor at
                      the far end to turn round. Placeholder sizes until the
                      real room is measured -- every one is a flag.
+furnished.world   -- exploration: a 9 x 7 m room, tables, chairs and a
+                     cupboard placed at random from --layout N (furniture
+                     that moves between runs), robot at the origin.
 
 Coordinates: x forward from the start, y to the left, metres. Gazebo spawns
 the robot at the origin (sim/run_sim.sh), so the route geometry here
@@ -94,6 +97,28 @@ def classroom(aisle: float, aisle_length: float, room_len: float, room_w: float,
     return HEADER.format(name="classroom") + "".join(parts) + FOOTER
 
 
+def furnished(layout: int) -> str:
+    """A 9 x 7 m room with two tables, six chairs and a cupboard, placed at
+    random from ``layout`` (a seed): for exploration, where the point is that
+    the furniture moves between runs. 1.5 m of clear floor round the start."""
+    import random
+    rng = random.Random(layout)
+    x0, x1, y0, y1 = -1.5, 7.5, -3.5, 3.5
+    parts = walls(x0, x1, y0, y1)
+    parts.append(box("cupboard", 6.9, -2.9, 1.0, 1.0, 1.8, "0.5 0.5 0.55"))
+    placed = [(0.0, 0.0, 1.2), (6.9, -2.9, 0.8)]           # (x, y, keep-out radius)
+    items = [("table", 1.4, 0.8, 0.75)] * 2 + [("chair", 0.5, 0.5, 0.9)] * 6
+    for i, (kind, sx, sy, sz) in enumerate(items):
+        r = 0.5 * max(sx, sy)
+        for _ in range(500):
+            x, y = rng.uniform(x0 + r + 0.2, x1 - r - 0.2), rng.uniform(y0 + r + 0.2, y1 - r - 0.2)
+            if all(((x - px) ** 2 + (y - py) ** 2) ** 0.5 > pr + r + 0.3 for px, py, pr in placed):
+                placed.append((x, y, r))
+                parts.append(box(f"{kind}_{i}", x, y, sx, sy, sz, "0.55 0.4 0.25"))
+                break
+    return HEADER.format(name=f"furnished layout {layout}") + "".join(parts) + FOOTER
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--aisle", type=float, default=1.2, help="clear aisle width, m")
@@ -101,14 +126,17 @@ def main(argv=None) -> int:
     ap.add_argument("--room-length", type=float, default=6.0)
     ap.add_argument("--room-width", type=float, default=7.0)
     ap.add_argument("--box", action="store_true", help="small room: add the obstacle box")
+    ap.add_argument("--layout", type=int, default=1, help="furnished room: furniture seed")
     ap.add_argument("--out", type=Path, default=Path(__file__).resolve().parent)
     a = ap.parse_args(argv)
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / "small_room.world").write_text(small_room(a.box))
     (a.out / "classroom.world").write_text(
         classroom(a.aisle, a.aisle_length, a.room_length, a.room_width))
-    print(f"wrote {a.out / 'small_room.world'} (box={'yes' if a.box else 'no'}) and "
-          f"{a.out / 'classroom.world'} (aisle {a.aisle} m)")
+    (a.out / "furnished.world").write_text(furnished(a.layout))
+    print(f"wrote {a.out / 'small_room.world'} (box={'yes' if a.box else 'no'}), "
+          f"{a.out / 'classroom.world'} (aisle {a.aisle} m) and "
+          f"{a.out / 'furnished.world'} (layout {a.layout})")
     return 0
 
 
