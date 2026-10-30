@@ -85,6 +85,22 @@ class TestMemory(unittest.TestCase):
         pts = [pt(1.0, 0.0, 0.05), pt(1.0, 0.0, 0.5), pt(1.0, 0.0, 1.5), pt(20.0, 0.0, 0.5)]
         self.assertEqual(obstacle_xy(pts, ORIGIN, FLOOR, P), [(1.0, 0.0)])
 
+    def test_obstacle_xy_drops_its_own_legs(self):
+        # sim 2026-10-31: remembered leg points boxed it in wherever it walked
+        legs = [pt(0.30, 0.18), pt(-0.38, -0.18), pt(0.42, 0.25)]   # incl. a swinging foot
+        self.assertEqual(obstacle_xy(legs, ORIGIN, FLOOR, P), [])
+        pose = Pose2D(2.0, 1.0, math.pi / 2)                         # same, rotated
+        rot = [pt(2.0 - 0.18, 1.0 + 0.30), pt(2.0 + 0.18, 1.0 - 0.38)]
+        self.assertEqual(obstacle_xy(rot, pose, FLOOR, P), [])
+
+    def test_walking_leaves_no_ghosts_behind(self):
+        mem = ObstacleMemory()
+        for i in range(20):                                          # walks 2 m along x
+            pose = Pose2D(0.1 * i, 0.0, 0.0)
+            legs = [pt(pose.x + 0.3, 0.18), pt(pose.x - 0.38, -0.18)]
+            mem.add(obstacle_xy(legs, pose, FLOOR, P), now=0.1 * i)
+        self.assertEqual(ring_count(mem.points(), Pose2D(1.9, 0.0, 0.0), 0.70, P), 0)
+
 
 class TestFilters(unittest.TestCase):
     def test_own_body_ignored(self):

@@ -126,17 +126,32 @@ def voxel_xy(points_xy, cell: float = 0.05):
 
 
 def obstacle_xy(points, pose: Pose2D, floor_z: float, p: ObstacleParams = ObstacleParams(),
-                max_range: float = 8.0):
+                max_range: float = 8.0, body_pad: float = 0.10):
     """(x, y) in the odometry frame of every point in the obstacle height band
-    within ``max_range`` of the robot -- what exploration plans around
-    (explore.py). The robot's own footprint is dropped there, against the
-    pose at planning time."""
+    within ``max_range`` of the robot, minus the robot itself -- what is
+    remembered for the turn check and planned around by exploration.
+
+    The LiDAR sees the robot's own legs. Kept, they become obstacles left
+    behind wherever it walked: in the sim (2026-10-31) its own old leg points
+    sat in its turn sweep and it refused to turn anywhere. So the footprint,
+    padded by ``body_pad`` for swinging legs, is dropped against the pose of
+    *this* scan, before anything is remembered."""
     r2 = max_range * max_range
+    c, s = math.cos(pose.yaw), math.sin(pose.yaw)
+    front, rear = p.body_front + body_pad, p.body_rear + body_pad
+    half = p.body_half_width + body_pad
     out = []
     for x, y, z in points:
         h = z - floor_z
-        if p.z_min <= h <= p.z_max and (x - pose.x) ** 2 + (y - pose.y) ** 2 <= r2:
-            out.append((x, y))
+        if not p.z_min <= h <= p.z_max:
+            continue
+        dx, dy = x - pose.x, y - pose.y
+        if dx * dx + dy * dy > r2:
+            continue
+        xr, yr = c * dx + s * dy, -s * dx + c * dy
+        if -rear <= xr <= front and abs(yr) <= half:
+            continue                            # the robot itself
+        out.append((x, y))
     return out
 
 
