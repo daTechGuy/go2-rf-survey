@@ -75,7 +75,8 @@ def select(entries, today: dt.date, days: int, recordings: bool = True, run: str
         elif path.endswith(".log") and size < 5_000_000:
             chosen.append((path, size))
     # floorplans and logs first, then the rest, raw recordings last
-    rank = lambda e: (2 if is_recording(e[0]) else 0 if "topdown" in e[0] else 1, e[1])  # noqa: E731
+    rank = lambda e: (2 if is_recording(e[0])  # noqa: E731
+                      else 0 if ("topdown" in e[0] or e[0].endswith("_report.html")) else 1, e[1])
     return sorted(chosen, key=rank)
 
 

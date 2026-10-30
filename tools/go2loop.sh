@@ -149,10 +149,12 @@ case "${1:-}" in
       echo "viz exited:"; tail -n 20 "${HOME}/surveys/go2viz.log" "${HOME}/surveys/go2viz_bridge.log"; exit 1
     fi
     ;;
-  camera-check)
-    # read-only: one picture from the front camera to ~/surveys/camera_test.jpg
-    IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c       "$SRC; python3 -u /workspace/tools/front_camera.py --once /surveys/camera_test.jpg"       2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
-    [ -s "${HOME}/surveys/camera_test.jpg" ] && echo "on the laptop:  scp go2:surveys/camera_test.jpg ."
+  camera-check|camera-snap)
+    # read-only: one picture from the front camera to ~/surveys/<name>
+    # (camera-check: camera_test.jpg; camera-snap NAME.jpg: demo.sh's stills)
+    shot="camera_test.jpg"; [ "$1" = camera-snap ] && shot="${2:?camera-snap needs a file name}"
+    IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c       "$SRC; python3 -u /workspace/tools/front_camera.py --once /surveys/$shot"       2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
+    [ -s "${HOME}/surveys/$shot" ] && echo "on the laptop:  scp go2:surveys/$shot ."
     ;;
   viz-reset)
     docker exec go2viz bash -c "source /opt/ros/humble/setup.bash; timeout 20 ros2 service call /go2_live_map/reset std_srvs/srv/Trigger 2>/dev/null | grep -o 'success=.*'" \
@@ -277,6 +279,7 @@ case "${1:-}" in
       fi
       echo "$b   $outcome   $(du -sh "$d" | cut -f1)"
       [ -f "$d.demolog" ] && echo "    log:      scp go2:surveys/$b.demolog ."
+      [ -f "${d}_report.html" ] && echo "    report:    scp go2:surveys/${b}_report.html ."
       [ -f "${d}_map-topdown.png" ] && echo "    floorplan: scp go2:surveys/${b}_map-topdown.png ."
       echo "    whole run: scp -r go2:surveys/$b* ."
       n=$((n + 1)); [ "$n" -ge "${2:-5}" ] && break

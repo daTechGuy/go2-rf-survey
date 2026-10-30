@@ -161,9 +161,15 @@ cleanup() {
     echo "   recording closed: ~/surveys/$BAG"
   fi
 }
+# one page per run (tools/run_report.py): after the "demo finished:" line,
+# which it reads; best-effort, never what decides how the run ended
+report() {
+  python3 "$REPO/tools/run_report.py" "$HOME/surveys/$BAG" >/dev/null 2>&1 && \
+    echo "   report:  scp go2:surveys/${BAG}_report.html ."
+}
 # every way out leaves a "demo finished:" line, which go2loop.sh results reads
-bail() { echo "$1"; cleanup; echo "== $(ts) demo finished: ${2:-failed ($1)}"; exit 1; }
-trap 'cleanup; echo "== $(ts) demo finished: stopped early (Ctrl-C / demo-stop)"; exit 130' INT TERM
+bail() { echo "$1"; cleanup; echo "== $(ts) demo finished: ${2:-failed ($1)}"; report; exit 1; }
+trap 'cleanup; echo "== $(ts) demo finished: stopped early (Ctrl-C / demo-stop)"; report; exit 130' INT TERM
 
 if [ "$VIZ" = 1 ]; then
   echo "== live view"
@@ -177,6 +183,8 @@ DETACH=go2rec IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
   "exec ros2 bag record -o /surveys/$BAG /utlidar/cloud_deskewed /utlidar/robot_odom > /surveys/$BAG.reclog 2>&1" \
   >/dev/null || bail "could not start recording"
 sleep 3
+# a still from the front camera for the report (best-effort: no camera, no picture)
+$G camera-snap "${BAG}_camera_start.jpg" >/dev/null 2>&1 || true
 
 if [ "$REHEARSE" = 0 ]; then
   echo "== bridge (backend $BACKEND)"
@@ -263,6 +271,7 @@ show_remote
 
 cleanup
 trap - INT TERM
+$G camera-snap "${BAG}_camera_end.jpg" >/dev/null 2>&1 || true
 
 # ---- record stage 2 / build the map -------------------------------------------
 if [ "$REHEARSE" = 0 ] && [ "$state" = "done" ] && [ "$EXPLORE" = 0 ] && \
@@ -282,3 +291,4 @@ if [ "$REHEARSE" = 1 ] && [ "$state" != aborted ]; then
 else
   echo "== $(ts) demo finished: ${state:-unknown}"
 fi
+report
