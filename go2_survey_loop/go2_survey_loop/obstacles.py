@@ -71,6 +71,60 @@ def classify(points, pose: Pose2D, floor_z: float, p: ObstacleParams = ObstacleP
     return front, near
 
 
+def ring_count(points_xy, pose: Pose2D, radius: float, p: ObstacleParams = ObstacleParams()) -> int:
+    """Remembered obstacle points (odom-frame x, y) within ``radius`` of the
+    robot's centre, outside its own footprint. For the turn check: the LiDAR
+    on the head sees poorly behind the body, so points seen in the last few
+    seconds (now behind it) must count too (2026-10-31: a brisk turn swung the
+    rear into a desk)."""
+    c, s = math.cos(pose.yaw), math.sin(pose.yaw)
+    r2 = radius * radius
+    n = 0
+    for x, y in points_xy:
+        dx, dy = x - pose.x, y - pose.y
+        if dx * dx + dy * dy > r2:
+            continue
+        xr, yr = c * dx + s * dy, -s * dx + c * dy
+        if -p.body_rear <= xr <= p.body_front and abs(yr) <= p.body_half_width:
+            continue
+        n += 1
+    return n
+
+
+class ObstacleMemory:
+    """Obstacle points (odom-frame x, y) seen in the last ``keep_s`` seconds,
+    one per ``cell`` square, each stamped with when it was last seen. What the
+    turn check counts (ring_count): the head LiDAR loses sight of things once
+    they're behind the body, but a turn on the spot still sweeps them."""
+
+    def __init__(self, keep_s: float = 10.0, cell: float = 0.05) -> None:
+        self.keep_s, self.cell = keep_s, cell
+        self._cells: dict = {}
+
+    def add(self, points_xy, now: float) -> None:
+        c = self.cell
+        for x, y in points_xy:
+            self._cells[(round(x / c), round(y / c))] = (x, y, now)
+
+    def prune(self, now: float) -> None:
+        old = now - self.keep_s
+        self._cells = {k: v for k, v in self._cells.items() if v[2] >= old}
+
+    def points(self):
+        return [(x, y) for x, y, _ in self._cells.values()]
+
+    def __len__(self) -> int:
+        return len(self._cells)
+
+
+def voxel_xy(points_xy, cell: float = 0.05):
+    """One point per ``cell`` square: keeps a few seconds of scans small."""
+    seen = {}
+    for x, y in points_xy:
+        seen.setdefault((round(x / cell), round(y / cell)), (x, y))
+    return list(seen.values())
+
+
 def obstacle_xy(points, pose: Pose2D, floor_z: float, p: ObstacleParams = ObstacleParams(),
                 max_range: float = 8.0):
     """(x, y) in the odometry frame of every point in the obstacle height band

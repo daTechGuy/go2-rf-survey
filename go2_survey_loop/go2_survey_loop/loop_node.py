@@ -51,7 +51,8 @@ from go2_survey_loop.geometry import (
     Pose2D, plan_local, route_extent, to_world, yaw_from_quaternion,
 )
 from go2_survey_loop.obstacles import (
-    ObstacleParams, classify, floor_from_scan, median, obstacle_xy,
+    ObstacleMemory, ObstacleParams, classify, floor_from_scan, median, obstacle_xy,
+    ring_count,
 )
 
 _POINTFIELD = {1: "i1", 2: "u1", 3: "i2", 4: "u2", 5: "i4", 6: "u4", 7: "f4", 8: "f8"}
@@ -109,6 +110,10 @@ class LoopNode(Node):
         d("stop_distance", 0.50)
         d("lane_half_width", 0.35)
         d("clearance_radius", 0.55)
+        # a turn on the spot waits while anything seen in the last memory_s
+        # seconds -- behind it included -- is within turn_clearance of centre
+        d("turn_clearance", 0.55)
+        d("memory_s", 10.0)
         d("body_front", 0.35)
         d("body_rear", 0.40)
         d("body_half_width", 0.20)
@@ -142,6 +147,10 @@ class LoopNode(Node):
         # ~2 s of scans' obstacle (x, y) for exploration to plan from: one scan
         # is sparse (thin legs, desk edges); planning happens standing still
         self._obst_scans: deque = deque(maxlen=30)
+        self._memory = ObstacleMemory(keep_s=float(g("memory_s")))
+        self._turn_clearance = float(g("turn_clearance"))
+        self._turn_near = 0
+        self._pruned_t = 0.0
         self._floor_hist: deque = deque(maxlen=15)
         self._frame_warned = False
         self.mission: Mission | None = None
@@ -206,10 +215,17 @@ class LoopNode(Node):
         if floor_z is None:
             return                          # can't tell floor from obstacle yet
         self._front, self._near = classify(pts, pose, floor_z, self.obst)
+        now = self._now()
+        obst = obstacle_xy(pts, pose, floor_z, self.obst)
+        self._memory.add(obst, now)
+        if now - self._pruned_t > 1.0:
+            self._memory.prune(now)
+            self._pruned_t = now
+        self._turn_near = ring_count(self._memory.points(), pose, self._turn_clearance, self.obst)
         if self.get_parameter("shape").value == "explore":
             # kept from before ~/start too: the first leg is planned at once
-            self._obst_scans.append(obstacle_xy(pts, pose, floor_z, self.obst))
-        self._cloud_t = self._now()
+            self._obst_scans.append(obst)
+        self._cloud_t = now
 
     def _ages(self, now: float):
         oa = math.inf if self._pose_t is None else now - self._pose_t
@@ -243,9 +259,10 @@ class LoopNode(Node):
         m = self.mission
         if isinstance(m, ExploreMission):
             obst = [p for scan in self._obst_scans for p in scan]
-            cmd = m.step(now, self._pose, oa, ca, self._front, self._near, obst)
+            cmd = m.step(now, self._pose, oa, ca, self._front, self._near, obst,
+                         self._turn_near)
         else:
-            cmd = m.step(now, self._pose, oa, ca, self._front, self._near)
+            cmd = m.step(now, self._pose, oa, ca, self._front, self._near, self._turn_near)
         if cmd.publish:
             self._publish(cmd.vx, cmd.vyaw)
 

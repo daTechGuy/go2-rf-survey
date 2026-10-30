@@ -23,7 +23,7 @@ from go2_survey_loop.explore import (  # noqa: E402
 )
 from go2_survey_loop.follower import FollowerParams, SafetyParams, State  # noqa: E402
 from go2_survey_loop.geometry import Pose2D  # noqa: E402
-from go2_survey_loop.obstacles import ObstacleParams, classify  # noqa: E402
+from go2_survey_loop.obstacles import ObstacleParams, classify, ring_count  # noqa: E402
 
 FP = FollowerParams()
 EP = ExploreParams()
@@ -55,13 +55,18 @@ def counts(points_xy, pose):
     return classify([(x, y, 0.5) for x, y in points_xy], pose, 0.0, BODY)
 
 
+TURN_CLEARANCE = 0.70     # demo.sh --explore
+
+
 def run(mission, pose, room, steps=6000, yaw_gain=1.0, extra=lambda t: []):
-    """Closed loop. Returns (pose, log of (t, pose, cmd), closest approach)."""
+    """Closed loop. Returns (pose, log of (t, pose, cmd), closest approach).
+    The turn check sees the whole room: a perfect memory."""
     log, t, closest = [], 0.0, math.inf
     for _ in range(steps):
         pts = room + extra(t)
         front, near = counts(pts, pose)
-        cmd = mission.step(t, pose, FRESH, FRESH, front, near, pts)
+        turn_near = ring_count(pts, pose, TURN_CLEARANCE, BODY)
+        cmd = mission.step(t, pose, FRESH, FRESH, front, near, pts, turn_near)
         log.append((t, pose, cmd))
         if cmd.publish and cmd.state == State.RUNNING:
             yaw = pose.yaw + yaw_gain * cmd.vyaw * DT
@@ -283,6 +288,46 @@ class TestInterruptions(unittest.TestCase):
         cmd = m.step(0.0, Pose2D(0, 0, 0), FRESH, FRESH, 0, 0, tight)
         self.assertEqual(cmd.state, State.ABORTED)
         self.assertIn("nowhere", cmd.reason)
+
+
+class TestNoRoomToTurn(unittest.TestCase):
+    """Something close behind (out of the head LiDAR's sight, but remembered):
+    no turning on the spot here -- only roughly straight on, or wait."""
+
+    def test_only_straight_ahead_when_it_cannot_turn(self):
+        # open floor ahead (+x along y = -2); the best leg with room to turn
+        # would be elsewhere, but here it may only go roughly straight on
+        pose = Pose2D(1.0, -2.0, 0.0)
+        m = new_mission()
+        cmd = m.step(0.0, pose, FRESH, FRESH, 0, 0, ROOM, turn_near=20)
+        self.assertEqual(cmd.state, State.RUNNING, cmd.reason)
+        self.assertIsNotNone(m.leg)
+        tx, ty = m.leg.target
+        self.assertLess(abs(math.atan2(ty - pose.y, tx - pose.x)), EP.straight_turn + 1e-6)
+        self.assertFalse(cmd.vx == 0.0 and cmd.vyaw != 0.0)      # no turn on the spot
+
+    def test_waits_for_the_operator_if_nothing_is_straight_ahead(self):
+        m = new_mission()
+        wall_ahead = ROOM + segment(1.2, -2, 1.2, 2)
+        cmd = m.step(0.0, Pose2D(0, 0, 0), FRESH, FRESH, 0, 0, wall_ahead, turn_near=20)
+        self.assertEqual(cmd.state, State.PAUSED)
+        self.assertIn("no room to turn", cmd.reason)
+        # latched: room to turn later doesn't restart it by itself
+        cmd = m.step(1.0, Pose2D(0, 0, 0), FRESH, FRESH, 0, 0, wall_ahead, turn_near=0)
+        self.assertEqual(cmd.state, State.PAUSED)
+        ok, _ = m.resume(FRESH, FRESH, 0, 0)
+        self.assertTrue(ok)
+
+    def test_leg_needing_a_turn_is_dropped_for_a_straight_one(self):
+        m = new_mission()
+        # plan with room to turn: a leg that starts with a turn on the spot
+        pose = Pose2D(0, 0, math.pi)                   # facing the near wall
+        m.step(0.0, pose, FRESH, FRESH, 0, 0, ROOM, turn_near=0)
+        self.assertIsNotNone(m.leg)
+        # then the memory fills behind it: the turn must not happen
+        cmd = m.step(0.1, pose, FRESH, FRESH, 0, 0, ROOM, turn_near=20)
+        self.assertEqual((cmd.vx, cmd.vyaw), (0.0, 0.0))
+        self.assertIn("no room to turn", cmd.reason)
 
 
 class TestLimits(unittest.TestCase):

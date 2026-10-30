@@ -270,7 +270,10 @@ class Mission:
     # ------------------------------------------------------------------- step
 
     def step(self, now: float, pose: Pose2D | None, odom_age: float,
-             cloud_age: float, front: int, near: int) -> Command:
+             cloud_age: float, front: int, near: int, turn_near: int = 0) -> Command:
+        """``turn_near``: remembered obstacle points (last few seconds, any
+        direction, behind included) inside the turn sweep. A turn on the
+        spot waits while there are any (loop_node.py, obstacles.ring_count)."""
         s = self.safety
 
         # 1. terminal
@@ -333,6 +336,9 @@ class Mission:
         vyaw = self._latch_turn(pose, vyaw)
         if vx > 0.0 and front >= s.min_obstacle_points:
             return self._pause(f"obstacle (front={front}, near={near})")
+        if vx == 0.0 and vyaw != 0.0 and turn_near >= s.min_obstacle_points:
+            return self._pause(f"no room to turn ({turn_near} points in the turn sweep, "
+                               "maybe behind)")
         if self._stalled(now, pose, vx, vyaw):
             return self._pause(f"not moving for {s.stall_s:.0f}s -- stalled, "
                                "or lying down? (resume when it can walk)")

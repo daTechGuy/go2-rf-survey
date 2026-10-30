@@ -14,7 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from go2_survey_loop.geometry import Pose2D  # noqa: E402
 from go2_survey_loop.obstacles import (  # noqa: E402
-    ObstacleParams, classify, floor_from_scan, median,
+    ObstacleMemory, ObstacleParams, classify, floor_from_scan, median, obstacle_xy,
+    ring_count,
 )
 
 FLOOR = 0.0
@@ -46,6 +47,43 @@ class TestRing(unittest.TestCase):
 
     def test_point_behind_close_is_near(self):
         self.assertEqual(classify([pt(-0.45, 0.0)], ORIGIN, FLOOR), (0, 1))
+
+
+class TestMemory(unittest.TestCase):
+    """The turn check's memory: things now behind the robot still count."""
+
+    def test_remembers_what_it_can_no_longer_see(self):
+        mem = ObstacleMemory(keep_s=10.0)
+        mem.add([(-0.6, 0.0)], now=0.0)       # seen earlier, now 0.6 m behind
+        mem.add([], now=5.0)                  # current scan: nothing
+        self.assertEqual(ring_count(mem.points(), ORIGIN, 0.70, P), 1)
+
+    def test_forgets_after_keep_s(self):
+        mem = ObstacleMemory(keep_s=10.0)
+        mem.add([(-0.6, 0.0)], now=0.0)
+        mem.prune(now=11.0)
+        self.assertEqual(len(mem), 0)
+
+    def test_seen_again_stays(self):
+        mem = ObstacleMemory(keep_s=10.0)
+        mem.add([(-0.6, 0.0)], now=0.0)
+        mem.add([(-0.6, 0.0)], now=9.0)
+        mem.prune(now=11.0)
+        self.assertEqual(len(mem), 1)
+
+    def test_one_point_per_cell(self):
+        mem = ObstacleMemory(cell=0.05)
+        mem.add([(1.0, 1.0), (1.01, 1.01), (1.2, 1.0)], now=0.0)
+        self.assertEqual(len(mem), 2)
+
+    def test_ring_count_ignores_own_body_and_far_points(self):
+        pts = [(0.2, 0.1), (-0.3, -0.1),      # inside the footprint: its own legs
+               (0.0, 0.65), (2.0, 0.0)]       # beside it (counts); far (doesn't)
+        self.assertEqual(ring_count(pts, ORIGIN, 0.70, P), 1)
+
+    def test_obstacle_xy_band_and_range(self):
+        pts = [pt(1.0, 0.0, 0.05), pt(1.0, 0.0, 0.5), pt(1.0, 0.0, 1.5), pt(20.0, 0.0, 0.5)]
+        self.assertEqual(obstacle_xy(pts, ORIGIN, FLOOR, P), [(1.0, 0.0)])
 
 
 class TestFilters(unittest.TestCase):

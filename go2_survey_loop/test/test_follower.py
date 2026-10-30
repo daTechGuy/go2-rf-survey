@@ -336,6 +336,19 @@ class TestPauses(unittest.TestCase):
         self.assertEqual(cmd.vx, 0.0)
         self.assertNotEqual(cmd.vyaw, 0.0)
 
+    def test_remembered_points_stop_a_turn_on_the_spot(self):
+        # something behind, out of the LiDAR's sight but remembered
+        m = Mission([(-2.0, 0.0)], Pose2D(0, 0, 0), 0.0, FP, SafetyParams())
+        cmd = m.step(0.0, Pose2D(0, 0, 0), FRESH, FRESH, 0, 0, turn_near=20)
+        self.assertEqual(cmd.state, State.PAUSED)
+        self.assertIn("no room to turn", cmd.reason)
+
+    def test_remembered_points_dont_stop_walking(self):
+        m = Mission([(2.0, 0.0)], Pose2D(0, 0, 0), 0.0, FP, SafetyParams())
+        cmd = m.step(0.0, Pose2D(0, 0, 0), FRESH, FRESH, 0, 0, turn_near=20)
+        self.assertEqual(cmd.state, State.RUNNING)
+        self.assertGreater(cmd.vx, 0)
+
     def test_ring_stops_a_turn_on_the_spot(self):
         m = Mission([(-2.0, 0.0)], Pose2D(0, 0, 0), 0.0, FP, SafetyParams())
         cmd = m.step(0.0, Pose2D(0, 0, 0), FRESH, FRESH, front=0, near=50)

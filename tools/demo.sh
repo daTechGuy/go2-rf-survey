@@ -193,6 +193,7 @@ if [ "$EXPLORE" = 1 ]; then
   # desk with the route's 0.55 m ring / 0.5 m stop / 0.35 m lane (2026-10-31)
   LOOP_ARGS="-p shape:=explore -p explore_legs:=$LEGS -p explore_radius:=$RADIUS -p dry_run:=$DRY"
   LOOP_ARGS="$LOOP_ARGS -p clearance_radius:=0.70 -p stop_distance:=0.70 -p lane_half_width:=0.45"
+  LOOP_ARGS="$LOOP_ARGS -p turn_clearance:=0.70"
 else
   LOOP_ARGS="-p shape:=$SHAPE -p length:=$LENGTH -p dry_run:=$DRY"
   [ -n "$WIDTH" ] && LOOP_ARGS="$LOOP_ARGS -p width:=$WIDTH"

@@ -69,6 +69,9 @@ class ExploreParams:
     replan_hold_s: float = 1.0      # stand this long after a block, then re-plan
     home_skip_m: float = 0.6        # on the way home, a turn point this close
                                     # with something just beyond it counts as reached
+    straight_turn: float = 0.30     # rad: with no room to turn here, only legs
+                                    # this close to straight ahead (under the
+                                    # follower's 0.35 turn-on-the-spot threshold)
     max_range: float = 8.0          # m: further points don't matter for one leg
     trail_step: float = 0.3         # m between remembered trail points
 
@@ -116,13 +119,17 @@ def free_distance(obst_robot, heading_rel: float, corridor_half: float,
 
 def choose_leg(pose: Pose2D, obstacles_xy, visited, start: Pose2D,
                p: ExploreParams = ExploreParams(),
-               body: ObstacleParams = ObstacleParams()):
-    """The best next leg, or None if no direction is open enough."""
+               body: ObstacleParams = ObstacleParams(), max_turn: float | None = None):
+    """The best next leg, or None if no direction is open enough.
+    ``max_turn``: only headings this close to straight ahead (rad) -- when
+    there is no room to turn on the spot here."""
     obst = robot_frame(obstacles_xy, pose, body, p.max_range)
     best = None
     c2 = p.end_clearance * p.end_clearance
     for k in range(p.headings):
         rel = -math.pi + 2.0 * math.pi * k / p.headings
+        if max_turn is not None and abs(rel) > max_turn:
+            continue
         free = free_distance(obst, rel, p.corridor_half, p.max_range)
         longest = min(p.leg_max, free - p.margin)
         # the longest leg that ends somewhere it can turn round, in 0.3 m steps
@@ -218,7 +225,8 @@ class ExploreMission:
     # ---------------------------------------------------------------- step
 
     def step(self, now: float, pose: Pose2D | None, odom_age: float,
-             cloud_age: float, front: int, near: int, obstacles_xy=()) -> Command:
+             cloud_age: float, front: int, near: int, obstacles_xy=(),
+             turn_near: int = 0) -> Command:
         s = self.safety
         if self.state in (State.DONE, State.ABORTED):
             publish = self._ended_at is not None and now - self._ended_at < s.tail_s
@@ -251,8 +259,14 @@ class ExploreMission:
                 # an empty picture is no picture: a real room always has walls
                 return self._hold("no LiDAR picture to plan from -- waiting", latch=False)
             self.state = State.RUNNING
+            can_turn = turn_near < s.min_obstacle_points
             if self.legs_done < self.p.legs:
-                leg = choose_leg(pose, obstacles_xy, self.visited, self.start, self.p, self.body)
+                leg = choose_leg(pose, obstacles_xy, self.visited, self.start, self.p, self.body,
+                                 max_turn=None if can_turn else self.p.straight_turn)
+                if leg is None and not can_turn:
+                    # home needs turning too: this one is for the operator
+                    return self._hold("no room to turn here and nothing open straight "
+                                      "ahead -- move me, or resume", latch=True)
                 if leg is not None:
                     self.leg_starts.append((pose.x, pose.y))
                     self.leg = Mission([leg.target], pose, now, self.follow,
@@ -262,9 +276,12 @@ class ExploreMission:
             if self.leg is None:
                 if not self.leg_starts:
                     return self._end(State.ABORTED, "nowhere open to explore", now)
+                if not can_turn:
+                    return self._hold("no room to turn to head home -- move me, or resume",
+                                      latch=True)
                 self._go_home(pose, now)
 
-        cmd = self.leg.step(now, pose, odom_age, cloud_age, front, near)
+        cmd = self.leg.step(now, pose, odom_age, cloud_age, front, near, turn_near)
 
         if cmd.state == State.DONE:
             if self.phase == "home":
@@ -277,6 +294,14 @@ class ExploreMission:
             return self._end(State.ABORTED, cmd.reason, now)
 
         if cmd.state == State.PAUSED:
+            if self.phase == "explore" and cmd.reason.startswith("no room to turn"):
+                # this leg needed a turn on the spot it can't make here: drop
+                # it; the next plan only looks roughly straight ahead
+                self.legs_done += 1
+                self.leg, self._hold_since = None, None
+                self.state = State.RUNNING
+                return Command(0.0, 0.0, True, State.RUNNING,
+                               f"no room to turn -- looking straight ahead ({self.progress()})")
             if self.phase == "explore" and cmd.reason.startswith("obstacle"):
                 # blocked mid-leg: stand, then choose another way
                 if self._hold_since is None:
