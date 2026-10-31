@@ -5,6 +5,9 @@
 #   bash sim/run_sim.sh up [small_room|classroom|box] [--gui]
 #   YAW_GAIN=0.33 bash sim/run_sim.sh up ...   turn at 1/3 the commanded rate,
 #                                     like the real Go2 on firmware 'mcf'
+#   LIDAR_H=220 bash sim/run_sim.sh up hall    fewer LiDAR rays across (default
+#                                     440): in the hall's ~100 models the scan
+#                                     rate fell to 7.3 Hz, under preflight's 8
 #   bash sim/run_sim.sh status        what's running, key topic rates
 #   bash sim/run_sim.sh press SELECT+UP [secs]   the fake remote
 #   bash sim/run_sim.sh stick 0.9 [secs]
@@ -60,6 +63,7 @@ case "${1:-}" in
     sed -e 's|<sensor name="velodyne-VLP16" type="ray">|&<always_on>true</always_on>|' \
         -e 's|<update_rate>10</update_rate>|<update_rate>15</update_rate>|' \
         -e 's|<samples>16</samples>|<samples>32</samples>|' \
+        -e "s|<samples>440</samples>|<samples>${LIDAR_H:-440}</samples>|" \
         -e 's|<min_angle>-0.2617993877991494</min_angle>|<min_angle>-0.8726646259971648</min_angle>|' \
         -e 's|<min>0.3</min>|<min>0.1</min>|' \
         -e 's|<min_range>0.9</min_range>|<min_range>0.15</min_range>|' "$xd/velodyne.xacro" > "$vlp"
