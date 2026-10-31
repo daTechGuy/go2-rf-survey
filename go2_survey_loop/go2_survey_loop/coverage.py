@@ -65,6 +65,46 @@ class Grid:
                     if counts[k] < 255:
                         counts[k] += 1
 
+    def mark_rays(self, origin, hits, sensor_h: float = 0.35, band=(0.10, 1.00)) -> None:
+        """Every return proves its ray was clear: mark FREE the cells the ray
+        crossed while it was inside the obstacle ``band`` (heights above the
+        floor). ``origin`` is the robot (x, y), ``sensor_h`` the LiDAR's
+        height, ``hits`` (x, y, height above floor). A ray to a wall 2 m up
+        and 20 m away is still under 1 m for its first metres: the floor
+        there is clear of anything desk-high. The hit cell itself excluded.
+
+        Sim hall (2026-10-31): floor returns only reach 3-5 m, so with floor
+        points alone the aisle beyond stayed 'unseen', though the desks and
+        walls 6-14 m away were in plain view."""
+        o = self.cell_of(*origin)
+        if o is None:
+            return
+        n, free = self.n, self._free
+        oi, oj = o
+        lo, hi_band = band
+        seen = {}
+        for x, y, h in hits:                    # one ray per hit cell (lowest hit)
+            c = self.cell_of(x, y)
+            if c is not None and c != o and (c not in seen or h < seen[c]):
+                seen[c] = h
+        for (ci, cj), h in seen.items():
+            # fraction of the ray, [t0, t1], spent inside the band
+            dh = h - sensor_h
+            if abs(dh) < 1e-6:
+                t0, t1 = (0.0, 1.0) if lo <= sensor_h <= hi_band else (1.0, 0.0)
+            else:
+                ta, tb = (lo - sensor_h) / dh, (hi_band - sensor_h) / dh
+                t0, t1 = max(0.0, min(ta, tb)), min(1.0, max(ta, tb))
+            if t0 >= t1:
+                continue
+            steps = max(abs(ci - oi), abs(cj - oj))
+            for k in range(max(1, math.ceil(t0 * steps)), min(steps, int(t1 * steps) + 1)):
+                i = oi + round((ci - oi) * k / steps)
+                j = oj + round((cj - oj) * k / steps)
+                key = i * n + j
+                if free[key] < 255:
+                    free[key] += 1
+
     def counts(self):
         """(free, occ, unknown) cell counts."""
         f = o = 0

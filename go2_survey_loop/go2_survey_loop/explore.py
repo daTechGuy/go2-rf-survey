@@ -96,6 +96,7 @@ class ExploreParams:
     # of the patch. Sim furnished room: aiming at the patch itself found
     # "nowhere open to explore" before the first step.
     view_dist: float = 2.0          # m
+    lidar_h: float = 0.35           # m above the floor: where rays start (coverage.mark_rays)
 
 
 @dataclass(frozen=True)
@@ -215,11 +216,15 @@ class ExploreMission:
 
     # ------------------------------------------------------------- the map
 
-    def observe(self, floor_xy, obstacle_xy) -> None:
-        """One scan's floor and obstacle points (odom x, y; the robot's own
-        legs already dropped) into the coverage grid. loop_node calls this
-        for every scan while exploring."""
+    def observe(self, floor_xy, obstacle_xy, origin=None, rays=()) -> None:
+        """One scan into the coverage grid: floor and obstacle points (odom
+        x, y; the robot's own legs already dropped), and optionally ``rays``
+        -- returns as (x, y, height above floor) -- traced from ``origin``
+        (where the robot stood) to mark the floor they crossed. loop_node
+        calls this for every scan while exploring (rays on every third)."""
         self.grid.mark(floor_xy, obstacle_xy)
+        if origin is not None and rays:
+            self.grid.mark_rays(origin, rays, self.p.lidar_h, (self.body.z_min, self.body.z_max))
         self.observations += 1
 
     def _frontier_leg(self, pose: Pose2D):
@@ -236,12 +241,12 @@ class ExploreMission:
         view = p.view_dist / g.cell
         best = None
         for patch in g.frontiers(p.frontier_min_cells):
-            ci = sum(c[0] for c in patch) / len(patch)
-            cj = sum(c[1] for c in patch) / len(patch)
-            mid = min(patch, key=lambda c: (c[0] - ci) ** 2 + (c[1] - cj) ** 2)
+            # its nearest edge: a big patch's middle can be far from anywhere
+            # it could stand (sim hall)
+            mid = min(patch, key=lambda c: (c[0] - here[0]) ** 2 + (c[1] - here[1]) ** 2)
             # the cheapest place to stand that can actually see into it
             goal = None
-            for c in sorted((c for c in stands if math.hypot(c[0] - ci, c[1] - cj) <= view),
+            for c in sorted((c for c in stands if math.hypot(c[0] - mid[0], c[1] - mid[1]) <= view),
                             key=cost.get):
                 if coverage.sees(g, c, mid):
                     goal = c

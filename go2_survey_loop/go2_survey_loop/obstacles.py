@@ -155,6 +155,30 @@ def obstacle_xy(points, pose: Pose2D, floor_z: float, p: ObstacleParams = Obstac
     return out
 
 
+def ray_points(points, pose: Pose2D, floor_z: float, p: ObstacleParams = ObstacleParams(),
+               max_range: float = 12.0, body_pad: float = 0.10, cell: float = 0.25):
+    """(x, y, height above floor) of returns to trace rays to (coverage.
+    mark_rays): within ``max_range``, not the robot's own legs, thinned to
+    the lowest return per ``cell`` square (one ray per cell is enough)."""
+    r2 = max_range * max_range
+    c, s = math.cos(pose.yaw), math.sin(pose.yaw)
+    front, rear = p.body_front + body_pad, p.body_rear + body_pad
+    half = p.body_half_width + body_pad
+    low = {}
+    for x, y, z in points:
+        dx, dy = x - pose.x, y - pose.y
+        if dx * dx + dy * dy > r2:
+            continue
+        xr, yr = c * dx + s * dy, -s * dx + c * dy
+        if -rear <= xr <= front and abs(yr) <= half:
+            continue
+        h = z - floor_z
+        k = (round(x / cell), round(y / cell))
+        if k not in low or h < low[k][2]:
+            low[k] = (x, y, h)
+    return list(low.values())
+
+
 def floor_xy(points, pose: Pose2D, floor_z: float, band: float = 0.06,
              max_range: float = 8.0):
     """(x, y) of floor returns -- within ``band`` of the floor height, inside

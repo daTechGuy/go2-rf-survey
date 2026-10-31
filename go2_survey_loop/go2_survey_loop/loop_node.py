@@ -52,7 +52,7 @@ from go2_survey_loop.geometry import (
 )
 from go2_survey_loop.obstacles import (
     ObstacleMemory, ObstacleParams, classify, floor_from_scan, floor_xy, median, obstacle_xy,
-    ring_count,
+    ray_points, ring_count,
 )
 
 _POINTFIELD = {1: "i1", 2: "u1", 3: "i2", 4: "u2", 5: "i4", 6: "u4", 7: "f4", 8: "f8"}
@@ -152,6 +152,7 @@ class LoopNode(Node):
         self._turn_clearance = float(g("turn_clearance"))
         self._turn_near = 0
         self._pruned_t = 0.0
+        self._explore_scans = 0
         self._floor_hist: deque = deque(maxlen=15)
         self._frame_warned = False
         self.mission: Mission | None = None
@@ -227,7 +228,10 @@ class LoopNode(Node):
             # kept from before ~/start too: the first leg is planned at once
             self._obst_scans.append(obst)
             if isinstance(self.mission, ExploreMission):
-                self.mission.observe(floor_xy(pts, pose, floor_z), obst)
+                self._explore_scans += 1
+                rays = (ray_points(pts, pose, floor_z, self.obst)
+                        if self._explore_scans % 3 == 0 else ())     # CPU: every third scan
+                self.mission.observe(floor_xy(pts, pose, floor_z), obst, (pose.x, pose.y), rays)
         self._cloud_t = now
 
     def _ages(self, now: float):

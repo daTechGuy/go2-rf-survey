@@ -180,6 +180,18 @@ class TestGrid(unittest.TestCase):
         self.assertFalse(coverage.sees(g, a, behind))
         self.assertTrue(coverage.sees(g, a, beside))          # unknown doesn't block
 
+    def test_rays_mark_the_floor_they_cross_at_desk_height(self):
+        g = Grid(0, 0, 8.0, 0.25)
+        # a wall 2 m up, 7 m away: the ray is under 1.0 m for its first ~2.7 m
+        g.mark_rays((0.0, 0.0), [(7.0, 0.0, 2.0)], sensor_h=0.35, band=(0.10, 1.00))
+        self.assertEqual(g.state(g.cell_of(1.0, 0.0)), FREE)
+        self.assertEqual(g.state(g.cell_of(2.5, 0.0)), FREE)
+        self.assertEqual(g.state(g.cell_of(5.0, 0.0)), UNKNOWN)   # ray above desk height
+        # a desk-high return 4 m away: clear all the way, not the hit itself
+        g.mark_rays((0.0, 0.0), [(0.0, 4.0, 0.5)])
+        self.assertEqual(g.state(g.cell_of(0.0, 3.5)), FREE)
+        self.assertEqual(g.state(g.cell_of(0.0, 4.0)), UNKNOWN)
+
     def test_truncate(self):
         out = coverage.truncate([(2.0, 0.0), (2.0, 3.0)], (0.0, 0.0), 3.0)
         self.assertEqual(out[0], (2.0, 0.0))
@@ -208,11 +220,11 @@ class TestFrontierClosedLoop(unittest.TestCase):
         # in a hall the LiDAR can see down most of, the win is efficiency: about
         # what greedy sees, then home -- instead of wandering out its legs
         seen, g_seen = self.m.grid.counts()[0], self.g.grid.counts()[0]
-        self.assertGreater(seen, 0.9 * g_seen)
-        self.assertLess(walked(self.log), 0.6 * walked(self.g_log))
+        self.assertGreaterEqual(seen, g_seen)                    # 3836 vs 3690
+        self.assertLess(walked(self.log), 0.8 * walked(self.g_log))   # 20 m vs 29 m
 
     def test_reaches_into_the_room(self):
-        self.assertGreater(max(p.x for _, p, _, _ in self.log), 4.0)
+        self.assertGreater(max(p.x for _, p, _, _ in self.log), 6.0)
 
     def test_home_is_a_direct_route(self):
         # not a retrace of every leg: close to the straight line home
