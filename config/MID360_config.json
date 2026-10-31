@@ -1,21 +1,15 @@
 {
-  "_comment_1": "Livox Mid-360 config for livox_ros_driver2. Copy into that",
-  "_comment_2": "package's config/ directory, or point its launch file here.",
+  "_comment_1": "Livox Mid-360 config for livox_ros_driver2, for the Go2 EDU's Jetson.",
+  "_comment_2": "Pass it explicitly: user_config_path:=/workspace/config/MID360_config.json",
+  "_comment_3": "(tools/mid360_check.sh). `ros2 launch livox_ros_driver2 msg_MID360_launch.py`",
+  "_comment_4": "reads the driver's OWN copy inside the image instead -- upstream placeholders",
+  "_comment_5": "192.168.1.5 / 192.168.1.12 -- which is why it got no data (2026-10-20..31).",
 
-  "_comment_ip_1": "=== YOU MUST EDIT TWO IP FIELDS (phase 2) ===",
-  "_comment_ip_2": "host_net_info.*_ip  -> the Jetson's address on the LiDAR subnet",
-  "_comment_ip_3": "lidar_configs[0].ip -> the Mid-360's OWN address",
-  "_comment_ip_4": "The Mid-360's address derives from its SERIAL NUMBER, usually",
-  "_comment_ip_5": "192.168.1.1XX where XX is the last two digits. The 192.168.1.12",
-  "_comment_ip_6": "below is the upstream placeholder and is probably NOT yours.",
-  "_comment_ip_7": "Find it: sudo tcpdump -i <iface> -n udp   during sensor boot.",
-
-  "_comment_subnet_1": "=== SUBNET COLLISION (decision D2) ===",
-  "_comment_subnet_2": "The LiDAR lives on 192.168.1.x; the Go2 on 192.168.123.x.",
-  "_comment_subnet_3": "Alias a second address onto the Jetson rather than reflashing",
-  "_comment_subnet_4": "the sensor -- non-destructive and reversible:",
-  "_comment_subnet_5": "  sudo ip addr add 192.168.1.5/24 dev <iface>",
-  "_comment_subnet_6": "That address must match host_net_info below.",
+  "_comment_ip_1": "=== ADDRESSES (measured on this robot 2026-10-20; the same on Go2 EDU",
+  "_comment_ip_2": "setups on GitHub: ACRE-Lab NCSU, I3T_CPSL, SeEEEun/GO2) ===",
+  "_comment_ip_3": "host_net_info.*_ip  -> the Jetson, 192.168.123.18 (eth0)",
+  "_comment_ip_4": "lidar_configs[0].ip -> the Mid-360, 192.168.123.20 (answers ping)",
+  "_comment_ip_5": "Same subnet as the Jetson: no address alias needed (decision D2 is moot).",
 
   "_comment_extrinsic_1": "=== LEAVE THE EXTRINSICS AT ZERO (decision, see docs/plan.md) ===",
   "_comment_extrinsic_2": "The 22-degree mount pitch is declared in the URDF, not here.",
@@ -36,13 +30,13 @@
       "log_data_port": 56500
     },
     "host_net_info": {
-      "cmd_data_ip": "192.168.1.5",
+      "cmd_data_ip": "192.168.123.18",
       "cmd_data_port": 56101,
-      "push_msg_ip": "192.168.1.5",
+      "push_msg_ip": "192.168.123.18",
       "push_msg_port": 56201,
-      "point_data_ip": "192.168.1.5",
+      "point_data_ip": "192.168.123.18",
       "point_data_port": 56301,
-      "imu_data_ip": "192.168.1.5",
+      "imu_data_ip": "192.168.123.18",
       "imu_data_port": 56401,
       "log_data_ip": "",
       "log_data_port": 56501
@@ -51,7 +45,7 @@
 
   "lidar_configs": [
     {
-      "ip": "192.168.1.12",
+      "ip": "192.168.123.20",
       "pcl_data_type": 1,
       "pattern_mode": 0,
       "extrinsic_parameter": {

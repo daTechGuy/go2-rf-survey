@@ -42,6 +42,8 @@
 #
 #   bash tools/go2loop.sh remote-keys  READ-ONLY: show which buttons the robot
 #                                      sees as you press them on the remote
+#   bash tools/go2loop.sh mid360-check why the Mid-360 sends nothing (no motion;
+#                                      runs our Livox driver ~15 s)
 #   bash tools/go2loop.sh state-watch  READ-ONLY: mode/gait/speeds/foot steps the
 #                                      robot reports while you drive with the sticks
 #   bash tools/go2loop.sh remote-up    start/abort the loop from the remote
@@ -185,6 +187,9 @@ case "${1:-}" in
     ;;
   bridge-down)
     if bridge_running; then docker stop "$BRIDGE" >/dev/null && echo "bridge stopped (StopMove sent on exit)"; else echo "bridge not running"; fi
+    ;;
+  mid360-check)
+    bash "$REPO/tools/mid360_check.sh"
     ;;
   state-watch)
     IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
