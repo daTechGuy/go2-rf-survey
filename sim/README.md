@@ -136,4 +136,33 @@ Safe at this size, but **inefficient**: it never went deeper than ~8–9 m into
 the hall (it avoids where it has *walked*, not what it has already *seen*),
 half the distance was the walk home retracing every leg, and the far half of
 the hall was only glimpsed between desks. That is what frontier exploring
-(`coverage.py`) is for — results below.
+(`coverage.py`) is for.
+
+## Results, 2026-10-31: frontier exploring
+
+The explorer keeps a 0.25 m map of seen floor, heads for viewpoints onto the
+edge of what is unseen, and comes home by the shortest clear path. Getting it
+to work took three rounds in the sim, each finding something real:
+
+| Round | Found | Fix |
+|---|---|---|
+| 1 | furnished room: "nowhere open to explore" before the first step — the unseen floor was all in the shadow right behind furniture, too close to stand on | go to a **viewpoint** within 2 m with a clear line of sight |
+| 2 | hall: "everything already seen" at the start — floor returns only reach 3–5 m, so the aisle beyond counted as unseen | **trace rays** to every return; floor they cross at desk height (0.1–1.0 m) is seen |
+| 2 | hall: one run "froze" 37 min | not the explorer (planning takes 0.05–0.13 s on the recorded run): the laptop slept. Long sim runs now keep it awake |
+| 2 | hall: LiDAR at 7.3 Hz < preflight's 8 in ~100 models | `LIDAR_H=220` (fewer rays across) for big worlds |
+
+**Hall** (25 × 20 m, `--legs 25 --radius 12 --minutes 15`, `YAW_GAIN=0.5`):
+
+| Layout | Greedy (above) | Frontier |
+|---|---|---|
+| 1 | 80 m, stayed in the near-left quarter, zig-zags | **done**: 66 m, 10 m down the centre aisle, both walkways, smooth paths round the desks, home in a straight line within 0.13 m |
+| 2 | 92 m, the near wall and first 8 m | **done**: 71 m, home within 0.10 m |
+
+Still bounded by `--radius 12`: for a whole 25 m hall use `--radius 20`.
+
+**Furnished room** (frontier, final version, `YAW_GAIN=0.5`): **3 of 3 done**
+— layout 1: 3 legs, 9 m, home within 0.13 m (one sim odometry hiccup paused
+it, correctly, until "the operator" resumed); layout 2: 2 legs, 8 m, 0.13 m;
+layout 3: 2 legs, 7 m, 0.12 m. A 9 × 7 m room is mostly seen from the start,
+so it takes few legs. (The sim got slower over a long day of runs: start-up
+refusals for a slow LiDAR were cured with `LIDAR_H=220`.)

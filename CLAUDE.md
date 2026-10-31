@@ -59,9 +59,15 @@ passed at a steady 0.3 m/s; stall check + L2+A abort added after the robot
 was laid down mid-run while the route kept commanding. **Exploration built**
 (`demo.sh --explore`, guide 04): 3 of 3 sim rooms done, not yet on the robot.
 
-**Next action:** guide 04 on the robot (turn test, 1 m walk, then explore with
-the wider margins + turn memory; watch the podium/desk). Then
-`python tools\get_results.py` on the laptop.
+**Since (offline, sim-validated):** frontier exploring (`coverage.py`: a map
+of seen floor, viewpoints onto the unseen edge, home by the shortest clear
+path) is the default; sim hall 2/2 and furnished room 3/3 done.
+`go2loop.sh mid360-check` diagnoses the Mid-360 (likely cause found: the
+launch file read the image's placeholder config, 192.168.1.x).
+
+**Next action:** on the robot: `go2loop.sh mid360-check` (+ the sudo
+tcpdump it prints); then guide 04 (turn test, 1 m walk, explore — watch the
+podium/desk). Then `python tools\get_results.py` on the laptop.
 Then the 3 m route / classroom (guide 02). Each session:
 route (user sudo) → preflight → `bridge-up` + `turn-test --i-confirm-breathing`
 (defaults to the 1.0 rad/s × 0.5 s turn that passes) → [ASK] demo. Robot-side
