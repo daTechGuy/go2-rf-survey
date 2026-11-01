@@ -3,6 +3,8 @@
 Printable, do-this-then-this instructions for a session with the robot.
 They assume nothing is set up and nothing is remembered from last time.
 
+**Next session: [next-session.md](next-session.md)** — one page, in order.
+
 | Guide | When | Time |
 |---|---|---|
 | **[01 — Small-room test](01-small-room-test.md)** | **First.** Unpack to pack-up: power, connect, check every safety piece, ending with a 1 m autonomous walk and a floorplan of the room. | ~90 min |
