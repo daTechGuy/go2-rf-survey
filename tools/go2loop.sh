@@ -201,7 +201,8 @@ case "${1:-}" in
       -p user_config_path:=/workspace/config/MID360_config.json -p xfer_format:=0 \
       -p multi_topic:=0 -p data_src:=0 -p publish_freq:=10.0 -p output_data_type:=0 \
       -p frame_id:=livox_frame"
-    MSRC="$SRC; source /opt/go2_ws/install/setup.bash"
+    # MID360_TOPIC: in the sim, the sim's own LiDAR stands in (/velodyne_points)
+    MSRC="$SRC; source /opt/go2_ws/install/setup.bash; export MID360_TOPIC=${MID360_TOPIC:-/livox/lidar}"
     if [ "$1" = mid360-calibrate ]; then
       # read-only for the robot: STANDING STILL on a flat floor
       IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
