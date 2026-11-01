@@ -63,7 +63,12 @@ was laid down mid-run while the route kept commanding. **Exploration built**
 of seen floor, viewpoints onto the unseen edge, home by the shortest clear
 path) is the default; sim hall 2/2 and furnished room 3/3 done.
 `go2loop.sh mid360-check` diagnoses the Mid-360 (likely cause found: the
-launch file read the image's placeholder config, 192.168.1.x).
+launch file read the image's placeholder config, 192.168.1.x). If it gets
+data: `mid360-calibrate` (floor → tilt/roll/height, walls → yaw;
+config/mid360_mount.yaml), `mid360-up` (driver with our config +
+`mid360_to_odom.py` → /mid360/cloud_odom), `demo.sh --mid360` (second LiDAR
+for stops / turn memory / exploring). Sim stand-in: calibrated exactly,
+clouds agree to 1.5 cm, explore done.
 
 **Next action:** on the robot: `go2loop.sh mid360-check` (+ the sudo
 tcpdump it prints); then guide 04 (turn test, 1 m walk, explore — watch the

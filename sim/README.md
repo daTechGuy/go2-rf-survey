@@ -138,6 +138,18 @@ half the distance was the walk home retracing every leg, and the far half of
 the hall was only glimpsed between desks. That is what frontier exploring
 (`coverage.py`) is for.
 
+## Mid-360 path, tested with a stand-in (2026-11-01)
+
+No Mid-360 in the sim, but its own LiDAR publishes in its sensor frame
+(`/velodyne_points`), like the Mid-360 would, so `MID360_TOPIC=/velodyne_points`
+runs the real Mid-360 code on it:
+
+| Step | Result |
+|---|---|
+| `mid360_calibrate.py` (floor plane + walls) | pitch 0.2°, roll 0.0°, yaw 0.0°, 0.33 m high — the sim's level mount |
+| `mid360_to_odom.py` vs the sim's own placed cloud | 100% of points within 7.5 cm, **median 1.5 cm** |
+| `demo.sh --explore --mid360`, furnished room | **done**, home within 0.13 m; status shows the second LiDAR live; recorded |
+
 ## Results, 2026-10-31: frontier exploring
 
 The explorer keeps a 0.25 m map of seen floor, heads for viewpoints onto the

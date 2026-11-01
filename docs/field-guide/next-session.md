@@ -38,8 +38,17 @@ line too (password `123`).
 **Send:** the whole output of both.
 
 > If it says **`WORKS with our config`**, the Mid-360 problem is solved, and
-> Claude can put it to work the same day (it's prepared, switched off until
-> you say so).
+> it can be put to work the same day (prepared, switched off until you say so):
+>
+> 1. Stand the robot up (L2 + A, single START) on open floor, a few metres
+>    from walls, and keep it **still**. Then (nothing moves):
+>    ```bash
+>    bash tools/go2loop.sh mid360-calibrate
+>    ```
+>    It measures the Mid-360's tilt, roll, height and direction from the floor
+>    and walls. **Send:** its output.
+> 2. In step 4 below, Claude then adds `--mid360` to the explore command: the
+>    Mid-360 also feeds the obstacle stop, the turn check and the map.
 
 ## 3. Today's safety gate — the robot moves (10 min)
 
