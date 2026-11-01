@@ -458,6 +458,8 @@ tools/                   ✅ post-processing, runs off-robot
   run_tests.py / .sh       all suites, no dependencies
   get_results.py           laptop: copy runs off the robot, resumable
   run_report.py            one page per run (also made on the robot by demo.sh)
+  map_diff.py              what moved between two visits: align two floorplans, new/gone
+  mid360_check.sh / _calibrate.py / _to_odom.py / _mount.py   the Mid-360 as a second LiDAR
   -- on the robot --
   go2loop.sh               one-word control: up/start/stop/status, bridge, viz,
                            remote, demo-log/demo-stop/results, record-start/stop

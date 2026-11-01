@@ -26,6 +26,16 @@ move, the run pauses itself within 5 seconds.
    anything knee-high or lower that it can't see well (thin chair legs are
    fine; flat cables on the floor are invisible to it) out of its way.
 
+## A2. Optional: the Mid-360 as a second LiDAR (nothing moves)
+
+```bash
+bash tools/go2loop.sh mid360-check          # does its driver get data?
+bash tools/go2loop.sh mid360-calibrate      # if yes: robot standing still, open floor
+```
+If both work, add **`--mid360`** to the explore command in C: it then also
+feeds the obstacle stop, the turn check and the map (it sees behind the robot,
+which the head LiDAR can't).
+
 ## B. Today's safety gate (as guide 01 J and L)
 
 1. [ ] Turn test: L2 + A, a single START, then **"go"** to Claude. Must PASS.
@@ -58,6 +68,16 @@ python tools\get_results.py
 Floorplans and logs first, the big recordings last, into
 `C:\Users\<you>\go2-surveys`. Cut off half-way? Plug back in and run it again:
 it carries on. `--no-recordings` for just the maps (seconds, not minutes).
+
+## E. What moved since the last visit (laptop, after D)
+
+```powershell
+python tools\map_diff.py $HOME\go2-surveys\<earlier run>_map.yaml $HOME\go2-surveys\<this run>_map.yaml --out what-moved.png
+```
+Lines the two floorplans up (different start spots are fine) and marks what is
+**new** (orange) and **gone** (blue) -- only where both visits saw the floor,
+so a corner one visit never reached isn't counted. It can't tell a chair from
+a person: compare runs where nobody walked through the room.
 
 Options (Claude adds them): `--legs N` (default 8), `--radius R` metres from
 the start (default 4).
