@@ -44,6 +44,9 @@
 #                                      sees as you press them on the remote
 #   bash tools/go2loop.sh mid360-check why the Mid-360 sends nothing (no motion;
 #                                      runs our Livox driver ~15 s)
+#   bash tools/go2loop.sh mid360-calibrate  measure its mount from the floor
+#                                      (robot standing still) -> config/mid360_mount.yaml
+#   bash tools/go2loop.sh mid360-up|mid360-down  driver + /mid360/cloud_odom
 #   bash tools/go2loop.sh state-watch  READ-ONLY: mode/gait/speeds/foot steps the
 #                                      robot reports while you drive with the sticks
 #   bash tools/go2loop.sh remote-up    start/abort the loop from the remote
@@ -190,6 +193,33 @@ case "${1:-}" in
     ;;
   mid360-check)
     bash "$REPO/tools/mid360_check.sh"
+    ;;
+  mid360-calibrate|mid360-up)
+    # The Livox driver, reading OUR config (msg_MID360_launch.py reads the
+    # image's placeholder copy), plus for -up the republisher into odom.
+    LIVOX="ros2 run livox_ros_driver2 livox_ros_driver2_node --ros-args \
+      -p user_config_path:=/workspace/config/MID360_config.json -p xfer_format:=0 \
+      -p multi_topic:=0 -p data_src:=0 -p publish_freq:=10.0 -p output_data_type:=0 \
+      -p frame_id:=livox_frame"
+    MSRC="$SRC; source /opt/go2_ws/install/setup.bash"
+    if [ "$1" = mid360-calibrate ]; then
+      # read-only for the robot: STANDING STILL on a flat floor
+      IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
+        "$MSRC; ($LIVOX > /tmp/livox.log 2>&1 &); sleep 5; python3 -u /workspace/tools/mid360_calibrate.py ${2:-3}" \
+        2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN  |unitree_ros2'
+    else
+      docker rm -f go2mid360 >/dev/null 2>&1
+      [ -f "$REPO/config/mid360_mount.yaml" ] || { echo "no config/mid360_mount.yaml -- run: bash tools/go2loop.sh mid360-calibrate"; exit 1; }
+      DETACH=go2mid360 IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
+        "$MSRC; ($LIVOX > /surveys/go2mid360_driver.log 2>&1 &); exec python3 -u /workspace/tools/mid360_to_odom.py > /surveys/go2mid360.log 2>&1" \
+        >/dev/null || { echo "could not start the Mid-360 container" >&2; exit 1; }
+      sleep 12
+      show_log "${HOME}/surveys/go2mid360.log" 4
+      echo "second LiDAR for the loop: -p extra_cloud_topic:=/mid360/cloud_odom  (demo.sh --mid360)"
+    fi
+    ;;
+  mid360-down)
+    docker rm -f go2mid360 >/dev/null 2>&1 && echo "Mid-360 stopped" || echo "Mid-360 was not running"
     ;;
   state-watch)
     IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \

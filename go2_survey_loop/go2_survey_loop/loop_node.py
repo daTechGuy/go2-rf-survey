@@ -99,6 +99,10 @@ class LoopNode(Node):
         d("cmd_vel_topic", "/cmd_vel")
         d("odom_topic", "/utlidar/robot_odom")
         d("cloud_topic", "/utlidar/cloud_deskewed")
+        # a second LiDAR already in the odom frame, e.g. /mid360/cloud_odom
+        # (tools/mid360_to_odom.py); "" = none. Adds obstacles, never required.
+        d("extra_cloud_topic", "")
+        d("extra_cloud_stride", 8)          # the Mid-360 sends ~10x the points
         d("rate_hz", 10.0)
         d("cloud_stride", 4)
         d("max_vx", 0.30)
@@ -145,6 +149,9 @@ class LoopNode(Node):
         self._odom_frame = ""
         self._cloud_t: float | None = None
         self._front = self._near = 0
+        self._front2 = self._near2 = 0          # the second LiDAR's, if any
+        self._extra_t: float | None = None
+        self.extra_stride = int(g("extra_cloud_stride"))
         # ~2 s of scans' obstacle (x, y) for exploration to plan from: one scan
         # is sparse (thin legs, desk edges); planning happens standing still
         self._obst_scans: deque = deque(maxlen=30)
@@ -165,6 +172,9 @@ class LoopNode(Node):
                                  qos_profile_sensor_data)
         self.create_subscription(PointCloud2, g("cloud_topic"), self._on_cloud,
                                  qos_profile_sensor_data)
+        if g("extra_cloud_topic"):
+            self.create_subscription(PointCloud2, g("extra_cloud_topic"), self._on_extra_cloud,
+                                     qos_profile_sensor_data)
         self.create_service(Trigger, "~/start", self._srv_start)
         self.create_service(Trigger, "~/stop", self._srv_stop)
         self.create_service(Trigger, "~/resume", self._srv_resume)
@@ -217,6 +227,34 @@ class LoopNode(Node):
         if floor_z is None:
             return                          # can't tell floor from obstacle yet
         self._front, self._near = classify(pts, pose, floor_z, self.obst)
+        self._ingest(pts, pose, floor_z)
+        self._cloud_t = self._now()
+
+    def _on_extra_cloud(self, msg: PointCloud2) -> None:
+        """A second LiDAR, already in the odom frame (the Mid-360, via
+        tools/mid360_to_odom.py). Its obstacles count too -- it sees behind
+        the robot and far denser -- but the built-in LiDAR stays the one that
+        must be fresh to move and that finds the floor."""
+        pose, floor_z = self._pose, median(self._floor_hist)
+        if pose is None or floor_z is None:
+            return
+        if self._odom_frame and msg.header.frame_id != self._odom_frame:
+            return
+        pts = cloud_points(msg, self.extra_stride)
+        self._front2, self._near2 = classify(pts, pose, floor_z, self.obst)
+        self._extra_t = self._now()
+        self._ingest(pts, pose, floor_z)
+
+    def _counts(self, now: float):
+        """Obstacle counts from the built-in LiDAR, and from the second one
+        while it is fresh: the larger of each."""
+        front, near = self._front, self._near
+        if self._extra_t is not None and now - self._extra_t <= 0.5:
+            front, near = max(front, self._front2), max(near, self._near2)
+        return front, near
+
+    def _ingest(self, pts, pose: Pose2D, floor_z: float) -> None:
+        """Turn memory and exploration's map, from either LiDAR."""
         now = self._now()
         obst = obstacle_xy(pts, pose, floor_z, self.obst)
         self._memory.add(obst, now)
@@ -232,7 +270,6 @@ class LoopNode(Node):
                 rays = (ray_points(pts, pose, floor_z, self.obst)
                         if self._explore_scans % 3 == 0 else ())     # CPU: every third scan
                 self.mission.observe(floor_xy(pts, pose, floor_z), obst, (pose.x, pose.y), rays)
-        self._cloud_t = now
 
     def _ages(self, now: float):
         oa = math.inf if self._pose_t is None else now - self._pose_t
@@ -253,9 +290,12 @@ class LoopNode(Node):
         now = self._now()
         oa, ca = self._ages(now)
         floor_z = median(self._floor_hist)
-        sensors = (f"odom {_age(oa)}, lidar {_age(ca)}, floor "
+        front, near = self._counts(now)
+        extra = ("" if self._extra_t is None else
+                 f", mid360 {_age(now - self._extra_t)}")
+        sensors = (f"odom {_age(oa)}, lidar {_age(ca)}{extra}, floor "
                    f"{'?' if floor_z is None else f'{floor_z:.2f}'}, "
-                   f"front {self._front}, near {self._near}")
+                   f"front {front}, near {near}")
         self._ticks += 1
 
         if self.mission is None:
@@ -266,10 +306,9 @@ class LoopNode(Node):
         m = self.mission
         if isinstance(m, ExploreMission):
             obst = [p for scan in self._obst_scans for p in scan]
-            cmd = m.step(now, self._pose, oa, ca, self._front, self._near, obst,
-                         self._turn_near)
+            cmd = m.step(now, self._pose, oa, ca, front, near, obst, self._turn_near)
         else:
-            cmd = m.step(now, self._pose, oa, ca, self._front, self._near, self._turn_near)
+            cmd = m.step(now, self._pose, oa, ca, front, near, self._turn_near)
         if cmd.publish:
             self._publish(cmd.vx, cmd.vyaw)
 
@@ -309,8 +348,9 @@ class LoopNode(Node):
             problems.append(f"no fresh LiDAR ({_age(ca)})")
         if median(self._floor_hist) is None:
             problems.append("floor not found yet")
-        if self._front >= k or self._near >= k:
-            problems.append(f"path blocked (front={self._front}, near={self._near})")
+        front, near = self._counts(now)
+        if front >= k or near >= k:
+            problems.append(f"path blocked (front={front}, near={near})")
         shape = str(g("shape"))
         local = []
         if shape == "explore":
@@ -370,8 +410,9 @@ class LoopNode(Node):
         if self.mission is None:
             res.success, res.message = False, "no mission"
             return res
-        oa, ca = self._ages(self._now())
-        ok, msg = self.mission.resume(oa, ca, self._front, self._near)
+        now = self._now()
+        oa, ca = self._ages(now)
+        ok, msg = self.mission.resume(oa, ca, *self._counts(now))
         res.success, res.message = ok, msg
         if ok:                                   # separate sites: see _tick
             self.get_logger().info(f"resume: {msg}")

@@ -29,6 +29,7 @@ SUITES = [
     "tools/tests/test_camera_frames.py",
     "tools/tests/test_get_results.py",
     "tools/tests/test_run_report.py",
+    "tools/tests/test_mid360_mount.py",
     "go2_survey_bridge/test/test_limits.py",
     "go2_survey_bridge/test/test_sport_api.py",
     "go2_survey_bridge/test/test_motion_backend.py",

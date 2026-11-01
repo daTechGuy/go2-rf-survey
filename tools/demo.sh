@@ -11,6 +11,9 @@
 #                   --strategy frontier (default: to the edge of what it has
 #                   seen, home the short way) or greedy (the first version))
 #   --minutes N     time limit for the run, default 5 (a big hall: 15)
+#   --mid360        the Mid-360 as a second LiDAR for the stops, turn memory
+#                   and exploring (needs go2loop.sh mid360-calibrate first);
+#                   the built-in LiDAR stays the one that must be fresh
 #
 # Options: --shape out_and_back|rectangle  --width W (rectangle)
 #          --backend sport|sport_prep|avoid  --name NAME  --no-viz  --no-map
@@ -46,7 +49,7 @@ cd "$REPO" || exit 1
 G="bash $REPO/tools/go2loop.sh"
 
 LENGTH=""; WIDTH=""; SHAPE=out_and_back; BACKEND=sport; NAME=demo
-EXPLORE=0; LEGS=8; RADIUS=4.0; LEG_MAX=1.5; MINUTES=5; STRATEGY=frontier
+EXPLORE=0; LEGS=8; RADIUS=4.0; LEG_MAX=1.5; MINUTES=5; STRATEGY=frontier; MID360=0
 BREATHING=0; REHEARSE=0; VIZ=1; MAP=1; SKIP_GATE=0
 DETACH_RUN=0; REMOTE=0; WAIT=600
 ARGS=("$@")
@@ -65,6 +68,7 @@ while [ $# -gt 0 ]; do
     --leg-max) LEG_MAX="$2"; shift 2 ;;
     --minutes) MINUTES="$2"; shift 2 ;;
     --strategy) STRATEGY="$2"; shift 2 ;;
+    --mid360) MID360=1; shift ;;
     --backend) BACKEND="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
     --i-confirm-breathing) BREATHING=1; shift ;;
@@ -162,6 +166,7 @@ cleanup() {
   $G stop >/dev/null 2>&1                       # 1. mission: zero velocity
   if [ "$STARTED_BRIDGE" = 1 ]; then $G bridge-down; fi   # 2. StopMove + hand back
   $G down >/dev/null 2>&1                       # 3. loop node
+  [ "$MID360" = 1 ] && $G mid360-down >/dev/null 2>&1   # 3b. the second LiDAR
   if docker ps --filter "name=^go2rec$" --format '{{.Names}}' | grep -q .; then
     docker kill -s INT go2rec >/dev/null 2>&1   # 4. SIGINT: ros2 bag closes cleanly
     timeout 30 docker wait go2rec >/dev/null 2>&1
@@ -186,10 +191,17 @@ if [ "$VIZ" = 1 ]; then
   $G viz-reset
 fi
 
+REC_TOPICS="/utlidar/cloud_deskewed /utlidar/robot_odom"
+if [ "$MID360" = 1 ]; then
+  echo "== Mid-360 (second LiDAR)"
+  $G mid360-up || bail "Mid-360 did not start"
+  REC_TOPICS="$REC_TOPICS /mid360/cloud_odom"
+fi
+
 echo "== recording -> ~/surveys/$BAG"
 docker rm -f go2rec >/dev/null 2>&1
 DETACH=go2rec IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
-  "exec ros2 bag record -o /surveys/$BAG /utlidar/cloud_deskewed /utlidar/robot_odom > /surveys/$BAG.reclog 2>&1" \
+  "exec ros2 bag record -o /surveys/$BAG $REC_TOPICS > /surveys/$BAG.reclog 2>&1" \
   >/dev/null || bail "could not start recording"
 sleep 3
 # a still from the front camera for the report (best-effort: no camera, no picture)
@@ -220,6 +232,7 @@ else
   [ -n "$WIDTH" ] && LOOP_ARGS="$LOOP_ARGS -p width:=$WIDTH"
 fi
 LOOP_ARGS="$LOOP_ARGS -p max_duration_s:=$((MINUTES * 60)).0"
+[ "$MID360" = 1 ] && LOOP_ARGS="$LOOP_ARGS -p extra_cloud_topic:=/mid360/cloud_odom"
 $G up $LOOP_ARGS || bail "loop node did not start"
 
 # what the remote trigger did (e.g. a start the loop refused: path blocked)
