@@ -195,12 +195,18 @@ case "${1:-}" in
     bash "$REPO/tools/mid360_check.sh"
     ;;
   mid360-calibrate|mid360-up)
-    # The Livox driver, reading OUR config (msg_MID360_launch.py reads the
-    # image's placeholder copy), plus for -up the republisher into odom.
-    LIVOX="ros2 run livox_ros_driver2 livox_ros_driver2_node --ros-args \
-      -p user_config_path:=/workspace/config/MID360_config.json -p xfer_format:=0 \
-      -p multi_topic:=0 -p data_src:=0 -p publish_freq:=10.0 -p output_data_type:=0 \
-      -p frame_id:=livox_frame"
+    # The Mid-360 streams points to us unasked; tools/mid360_udp.py receives
+    # them (2026-11-12: livox_ros_driver2 never completes its handshake with
+    # Unitree's firmware). MID360_DRIVER=livox: the official driver instead,
+    # reading OUR config. Plus, for -up, the republisher into odom.
+    if [ "${MID360_DRIVER:-udp}" = livox ]; then
+      LIVOX="ros2 run livox_ros_driver2 livox_ros_driver2_node --ros-args \
+        -p user_config_path:=/workspace/config/MID360_config.json -p xfer_format:=0 \
+        -p multi_topic:=0 -p data_src:=0 -p publish_freq:=10.0 -p output_data_type:=0 \
+        -p frame_id:=livox_frame"
+    else
+      LIVOX="python3 -u /workspace/tools/mid360_udp.py 4"
+    fi
     # MID360_TOPIC: in the sim, the sim's own LiDAR stands in (/velodyne_points)
     MSRC="$SRC; source /opt/go2_ws/install/setup.bash; export MID360_TOPIC=${MID360_TOPIC:-/livox/lidar}"
     if [ "$1" = mid360-calibrate ]; then
