@@ -43,8 +43,9 @@ def route_mission(length=3.0, width=2.0, detour=DetourParams(), cls=RouteMission
     return RouteMission(wps, Pose2D(0, 0, 0), 0.0, FP, safety, detour, BODY)
 
 
-def run(m, room, steps=6000, moving=None):
-    """Closed loop. ``moving(t)`` -> extra obstacle points at time t (a person)."""
+def run(m, room, steps=6000, moving=None, yaw_gain=1.0):
+    """Closed loop. ``moving(t)`` -> extra obstacle points at time t (a person);
+    ``yaw_gain`` < 1: turns deliver less than commanded, like the sim's 0.5."""
     lidar_static = room
     pose, t, closest, log = Pose2D(0, 0, 0), 0.0, math.inf, []
     for i in range(steps):
@@ -60,7 +61,7 @@ def run(m, room, steps=6000, moving=None):
         cmd = m.step(t, pose, FRESH, FRESH, front, near, turn_near)
         log.append((t, pose, cmd))
         if cmd.publish and cmd.state == State.RUNNING:
-            yaw = pose.yaw + cmd.vyaw * DT
+            yaw = pose.yaw + yaw_gain * cmd.vyaw * DT
             pose = Pose2D(pose.x + cmd.vx * DT * math.cos(yaw),
                           pose.y + cmd.vx * DT * math.sin(yaw), yaw)
         closest = min(closest, min(math.hypot(x - pose.x, y - pose.y) for x, y in pts))
@@ -98,6 +99,24 @@ class TestGoesRound(unittest.TestCase):
         t_pause = next(t for t, _, c in self.log if c.state == State.PAUSED)
         t_det = next(t for t, _, c in self.log if "detour" in c.reason)
         self.assertGreaterEqual(t_det - t_pause, DetourParams().wait_s - DT)
+
+    def test_sluggish_turning(self):
+        # sim 2026-11-11 (YAW_GAIN 0.5): the detour ended on the corner, 0.75 m
+        # from the chair, and a sluggish robot drifted inside the ring
+        m = route_mission()
+        end, log, closest = run(m, ROOM + self.obstacle, yaw_gain=0.5)
+        self.assertEqual(m.state, State.DONE, m.reason)
+        self.assertGreater(closest, BODY.clearance_radius)
+
+    def test_detour_keeps_its_clearance_to_the_end(self):
+        g = self.m.grid
+        clear = g.clearance()
+        self.assertTrue(self.m.detour_paths)
+        for path in self.m.detour_paths:
+            for x, y in path:                      # the last one included
+                self.assertGreaterEqual(clear.get(g.cell_of(x, y), 3.0),
+                                        DetourParams().path_clearance - 1e-6,
+                                        f"detour waypoint {(x, y)}")
 
     def test_a_plain_route_just_waits(self):
         m = route_mission(cls=Mission)

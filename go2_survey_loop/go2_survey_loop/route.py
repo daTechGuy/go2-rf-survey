@@ -12,7 +12,8 @@ it into the route:
 * only for something **ahead** (the front lane). Something inside the
   clearance ring still stops everything, as before;
 * the path keeps ``path_clearance`` from every obstacle cell, over floor
-  that was actually seen; a waypoint that is itself too close to the
+  that was actually seen, all the way: it ends on the clear cell by the
+  waypoint (within one cell), not on the waypoint; one that is itself too close to the
   obstacle is skipped and the next one aimed for (``max_skip``, one);
 * at most ``max_detours``; each no longer than ``max_ratio`` times the
   straight way plus ``slack_m``, and inside the geofence;
@@ -75,6 +76,7 @@ class RouteMission:
         self.grid = coverage.Grid(start.x, start.y, safety.geofence_m, detour.grid_cell)
         self.observations = 0
         self.detours = 0
+        self.detour_paths: list = []        # each detour's planned waypoints (logs, tests)
         self._blocked_since: float | None = None
         self._tried_at: float | None = None
 
@@ -131,8 +133,10 @@ class RouteMission:
                 continue
             best = min(near, key=cost.get)
             cells = coverage.path_to(parent, best)
+            # ends on the clear cell by the waypoint, not the waypoint itself:
+            # sim 2026-11-11, a corner 0.75 m from the chair -- the last
+            # segment, unchecked, took a sluggish-turning robot into the ring
             path = coverage.simplify(g, clear, cells, p.path_clearance)
-            path = path[:-1] + [(tx, ty)] if path else [(tx, ty)]
             straight = path_length((pose.x, pose.y), wps[i:j + 1])
             if path_length((pose.x, pose.y), path) > p.max_ratio * straight + p.slack_m:
                 continue
@@ -144,6 +148,7 @@ class RouteMission:
             msg = (f"detour {self.detours + 1}: round an obstacle, {len(path)} waypoint(s), "
                    f"{path_length((pose.x, pose.y), path):.1f} m"
                    + (f", skipping {skipped} blocked waypoint(s)" if skipped else ""))
+            self.detour_paths.append(path)
             return new, i + 1, msg            # the robot's own spot starts the line
         return None
 
