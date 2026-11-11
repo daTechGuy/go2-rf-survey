@@ -44,6 +44,11 @@ from go2_survey_loop.obstacles import ObstacleParams
 class DetourParams:
     enabled: bool = True
     wait_s: float = 3.0             # blocked this long before going round
+    # "the way cleared" only after this long with nothing ahead: robot
+    # 2026-11-11, a chair at the edge of the front lane flickered 2-8 points
+    # per scan (threshold 5); one clear reading resumed it, it stepped and
+    # stopped again, over and over, and never went round
+    clear_s: float = 1.0
     retry_s: float = 2.0            # no way round: look again this often
     # The route's 0.55 m ring + up to 0.18 m a 0.25 m cell can hide + wobble.
     # Exploring uses 0.95 with its 0.70 ring.
@@ -87,6 +92,7 @@ class RouteMission:
         self.replans = 0
         self.detour_paths: list = []        # every planned detour path (logs, tests)
         self._blocked_since: float | None = None
+        self._last_blocked: float | None = None     # last reading with something ahead
         self._tried_at: float | None = None
         # the detour being walked: index of its last waypoint in the route's
         # list, the route waypoint it stands in for, its re-plans so far
@@ -248,13 +254,15 @@ class RouteMission:
             self._blocked_since = None
             return cmd
         if self._blocked_since is None:
-            self._blocked_since = now
+            self._blocked_since = self._last_blocked = now
+        if front >= k:
+            self._last_blocked = now
         if now - self._blocked_since < self.p.wait_s:
             return cmd
-        if front < k:
-            # it moved off: carry on along the route as it was
+        if now - self._last_blocked >= self.p.clear_s:
+            # nothing ahead for clear_s: it moved off -- carry on as it was
             ok, _ = self.route.resume(odom_age, cloud_age, front, near)
-            self._blocked_since = self._tried_at = None
+            self._blocked_since = self._last_blocked = self._tried_at = None
             if ok:
                 self.route.reason = "the way cleared -- carrying on"
             return Command(0.0, 0.0, True, self.route.state, self.route.reason)

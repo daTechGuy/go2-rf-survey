@@ -157,6 +157,22 @@ class TestOtherCases(unittest.TestCase):
         self.assertEqual(m.detours, 0)                           # and carried on as it was
         self.assertTrue(any("cleared" in c.reason for _, _, c in log))
 
+    def test_flickering_obstacle_is_gone_round_not_crept_at(self):
+        # robot 2026-11-11: front count 2-8 per scan around the threshold 5;
+        # one low reading after the wait read as "cleared" -> step, stop, repeat
+        m = route_mission()
+        for _ in range(12):
+            m.observe(*Lidar(ROOM + chair(1.3, 0.0)).scan(Pose2D(0, 0, 0)))
+        flicker = [8, 3, 6, 4, 7, 2, 5, 4, 8, 3]
+        t, cmds = 0.0, []
+        m.step(t, Pose2D(0, 0, 0), FRESH, FRESH, 9, 0)            # it stops
+        while t < 6.0:
+            t += DT
+            f = flicker[int(t / DT) % len(flicker)]
+            cmds.append(m.step(t, Pose2D(0, 0, 0), FRESH, FRESH, f, 0))
+        self.assertFalse(any("cleared" in c.reason for c in cmds))
+        self.assertEqual(m.detours, 1)
+
     def test_no_way_round_waits(self):
         # a wall of desks right across the room on the second side
         wall = [(x / 20, 1.0) for x in range(-30, 111)]
