@@ -46,8 +46,8 @@ and the user's go.
   (`go2loop.sh bridge`'s path, or a one-shot request). The remote's
   **L2+B** works regardless.
 - Unknown: whether the Go2 keeps walking on the last `Move` if the stack
-  dies mid-command. Test with the robot lifted/lying first (no: test
-  standing, 0 speed) — at minimum, kill it only after `/stop 15`.
+  dies mid-command. Until that is known, stop it with `/stop 15` first and
+  only then kill the launch.
 
 ## Session plan
 
