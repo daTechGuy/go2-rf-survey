@@ -145,6 +145,59 @@ class TestFloor(unittest.TestCase):
     def test_too_few_points_is_none(self):
         self.assertIsNone(floor_from_scan([(0.5, 0.0, -0.3)] * 10, ORIGIN))
 
+    def tilted_scan(self, slope_deg=3.0, seed=5):
+        """Carpet tilting up ahead (+x) as the walking robot saw it, a chair
+        1.0 m to the side and a 12 cm box 2 m ahead."""
+        import random
+        rng = random.Random(seed)
+        g = math.tan(math.radians(slope_deg))
+        floor = lambda x, y: -0.05 + g * x                        # noqa: E731
+        pts = []
+        for _ in range(4000):
+            x, y = rng.uniform(-2.5, 2.5), rng.uniform(-2.5, 2.5)
+            if math.hypot(x, y) > 0.4:
+                pts.append((x, y, floor(x, y) + rng.gauss(0, 0.017)))
+        pts += [(0.3, 1.0, floor(0.3, 1.0) + z / 10) for z in range(1, 9)] * 20     # chair
+        pts += [(2.0, 0.0, floor(2.0, 0.0) + 0.12)] * 10                           # low box
+        return pts, floor
+
+    def test_floor_plane_follows_the_tilt(self):
+        from go2_survey_loop.obstacles import floor_plane_from_scan
+        pts, floor = self.tilted_scan()
+        pl = floor_plane_from_scan(pts, ORIGIN)
+        self.assertIsNotNone(pl)
+        self.assertAlmostEqual(pl.gx, math.tan(math.radians(3.0)), delta=0.01)
+        self.assertAlmostEqual(pl.gy, 0.0, delta=0.01)
+        for x, y in [(0.0, 0.0), (2.0, 0.0), (-2.0, 1.0)]:
+            self.assertAlmostEqual(pl.at(x, y), floor(x, y), delta=0.01)
+
+    def test_floor_plane_ends_the_carpet_ghosts(self):
+        # one floor height: high carpet 2 m ahead reads as obstacle; the plane: not
+        from go2_survey_loop.obstacles import floor_plane_from_scan
+        pts, floor = self.tilted_scan()
+        carpet = [p for p in pts if abs(p[2] - floor(p[0], p[1])) < 0.06]
+        flat = floor_from_scan(pts, ORIGIN)
+        pl = floor_plane_from_scan(pts, ORIGIN)
+        self.assertGreater(len(obstacle_xy(carpet, ORIGIN, flat)), 20)
+        self.assertEqual(obstacle_xy(carpet, ORIGIN, pl), [])
+        # and the real things stay: the chair and the 12 cm box
+        found = obstacle_xy(pts, ORIGIN, pl)
+        self.assertTrue(any(abs(x - 2.0) < 0.01 for x, y in found))
+        self.assertTrue(any(abs(y - 1.0) < 0.01 for x, y in found))
+
+    def test_floor_plane_takes_a_number_elsewhere(self):
+        from go2_survey_loop.obstacles import FloorPlane
+        level = FloorPlane(-0.3, 0.0, 0.0, 0.0, 0.0)
+        pts = [pt(0.6, 0.0), pt(0.0, 0.4), (1.0, 0.0, -0.3)]
+        self.assertEqual(classify(pts, ORIGIN, level), classify(pts, ORIGIN, -0.3))
+        self.assertEqual(obstacle_xy(pts, ORIGIN, level), obstacle_xy(pts, ORIGIN, -0.3))
+
+    def test_floor_plane_refuses_a_ramp(self):
+        from go2_survey_loop.obstacles import floor_plane_from_scan
+        pts, _ = self.tilted_scan(slope_deg=15.0)
+        pl = floor_plane_from_scan(pts, ORIGIN)
+        self.assertTrue(pl is None or (pl.gx, pl.gy) == (0.0, 0.0))
+
     def test_carpet_floor_is_its_middle(self):
         # the robot 2026-11-11: carpet returns spread ~7 cm. The floor must
         # be the carpet's middle, not its low tail, or carpet reads as obstacle.

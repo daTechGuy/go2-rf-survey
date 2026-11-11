@@ -52,8 +52,8 @@ from go2_survey_loop.geometry import (
     Pose2D, plan_local, route_extent, to_world, yaw_from_quaternion,
 )
 from go2_survey_loop.obstacles import (
-    ObstacleMemory, ObstacleParams, classify, floor_from_scan, floor_xy, median, obstacle_xy,
-    ray_points, ring_count,
+    ObstacleMemory, ObstacleParams, classify, floor_from_scan, floor_plane_from_scan, floor_xy,
+    median, obstacle_xy, ray_points, ring_count,
 )
 
 _POINTFIELD = {1: "i1", 2: "u1", 3: "i2", 4: "u2", 5: "i4", 6: "u4", 7: "f4", 8: "f8"}
@@ -132,6 +132,10 @@ class LoopNode(Node):
         # carpet ahead reached 0.10 and a route refused to turn in open floor.
         # Replay: 19 ghost points at 0.10, 1 at 0.12. Real fix: a floor plane.
         d("obstacle_z_min", 0.13)
+        # the floor as a plane fitted to each built-in scan (obstacles.
+        # floor_plane_from_scan) instead of one height: the real fix for the
+        # tilt above. Off until replayed on the 2026-11-11 recordings.
+        d("floor_plane", False)
         d("obstacle_z_max", 1.00)
         d("min_obstacle_points", 5)
         d("odom_timeout_s", 0.5)
@@ -159,6 +163,7 @@ class LoopNode(Node):
         self._cloud_t: float | None = None
         self._front = self._near = 0
         self._front2 = self._near2 = 0          # the second LiDAR's, if any
+        self._plane, self._plane_t = None, 0.0  # latest floor plane (floor_plane)
         self._extra_t: float | None = None
         self.extra_stride = int(g("extra_cloud_stride"))
         # ~2 s of scans' obstacle (x, y) for exploration to plan from: one scan
@@ -235,8 +240,13 @@ class LoopNode(Node):
         floor_z = median(self._floor_hist)
         if floor_z is None:
             return                          # can't tell floor from obstacle yet
-        self._front, self._near = classify(pts, pose, floor_z, self.obst)
-        self._ingest(pts, pose, floor_z)
+        floor = floor_z
+        if self.get_parameter("floor_plane").value:
+            plane = floor_plane_from_scan(pts, pose)
+            if plane is not None:
+                floor, self._plane, self._plane_t = plane, plane, self._now()
+        self._front, self._near = classify(pts, pose, floor, self.obst)
+        self._ingest(pts, pose, floor)
         self._cloud_t = self._now()
 
     def _on_extra_cloud(self, msg: PointCloud2) -> None:
@@ -249,6 +259,8 @@ class LoopNode(Node):
             return
         if self._odom_frame and msg.header.frame_id != self._odom_frame:
             return
+        if self._plane is not None and self._now() - self._plane_t <= 0.5:
+            floor_z = self._plane           # the built-in scan's floor plane, if fresh
         pts = cloud_points(msg, self.extra_stride)
         self._front2, self._near2 = classify(pts, pose, floor_z, self.obst)
         self._extra_t = self._now()

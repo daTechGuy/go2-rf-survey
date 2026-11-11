@@ -53,9 +53,10 @@ def classify(points, pose: Pose2D, floor_z: float, p: ObstacleParams = ObstacleP
     """
     c, s = math.cos(pose.yaw), math.sin(pose.yaw)
     r2 = p.clearance_radius * p.clearance_radius
+    fz = _floor_fn(floor_z)
     front = near = 0
     for x, y, z in points:
-        h = z - floor_z
+        h = z - fz(x, y)
         if h < p.z_min or h > p.z_max:
             continue
         dx, dy = x - pose.x, y - pose.y
@@ -140,9 +141,10 @@ def obstacle_xy(points, pose: Pose2D, floor_z: float, p: ObstacleParams = Obstac
     c, s = math.cos(pose.yaw), math.sin(pose.yaw)
     front, rear = p.body_front + body_pad, p.body_rear + body_pad
     half = p.body_half_width + body_pad
+    fz = _floor_fn(floor_z)
     out = []
     for x, y, z in points:
-        h = z - floor_z
+        h = z - fz(x, y)
         if not p.z_min <= h <= p.z_max:
             continue
         dx, dy = x - pose.x, y - pose.y
@@ -164,6 +166,7 @@ def ray_points(points, pose: Pose2D, floor_z: float, p: ObstacleParams = Obstacl
     c, s = math.cos(pose.yaw), math.sin(pose.yaw)
     front, rear = p.body_front + body_pad, p.body_rear + body_pad
     half = p.body_half_width + body_pad
+    fz = _floor_fn(floor_z)
     low = {}
     for x, y, z in points:
         dx, dy = x - pose.x, y - pose.y
@@ -172,7 +175,7 @@ def ray_points(points, pose: Pose2D, floor_z: float, p: ObstacleParams = Obstacl
         xr, yr = c * dx + s * dy, -s * dx + c * dy
         if -rear <= xr <= front and abs(yr) <= half:
             continue
-        h = z - floor_z
+        h = z - fz(x, y)
         k = (round(x / cell), round(y / cell))
         if k not in low or h < low[k][2]:
             low[k] = (x, y, h)
@@ -185,8 +188,9 @@ def floor_xy(points, pose: Pose2D, floor_z: float, band: float = 0.06,
     ``max_range`` -- for exploration's coverage grid: floor the LiDAR has seen
     is floor known to be there (coverage.py)."""
     r2 = max_range * max_range
+    fz = _floor_fn(floor_z)
     return [(x, y) for x, y, z in points
-            if abs(z - floor_z) <= band and (x - pose.x) ** 2 + (y - pose.y) ** 2 <= r2]
+            if abs(z - fz(x, y)) <= band and (x - pose.x) ** 2 + (y - pose.y) ** 2 <= r2]
 
 
 def floor_from_scan(points, pose: Pose2D, radius: float = 2.0,
@@ -210,6 +214,88 @@ def floor_from_scan(points, pose: Pose2D, radius: float = 2.0,
     low = zs[k]
     band = [z for z in zs[k:] if z <= low + layer]
     return band[len(band) // 2]
+
+
+@dataclass(frozen=True)
+class FloorPlane:
+    """The floor as a tilted plane, odometry frame: z = z0 + gx (x - x0) +
+    gy (y - y0), anchored where the robot stood. Wherever a floor height is
+    taken (classify, obstacle_xy, ray_points, floor_xy) a FloorPlane can
+    stand in for a plain number."""
+    z0: float
+    gx: float
+    gy: float
+    x0: float
+    y0: float
+
+    def at(self, x: float, y: float) -> float:
+        return self.z0 + self.gx * (x - self.x0) + self.gy * (y - self.y0)
+
+
+def _floor_fn(floor):
+    """floor height as a function of (x, y), from a number or a FloorPlane."""
+    if isinstance(floor, FloorPlane):
+        return floor.at
+    return lambda _x, _y: floor
+
+
+def _fit_plane(pts):
+    """Least squares z = a + b dx + c dy over (dx, dy, z); None if the points
+    don't spread in both directions."""
+    n = len(pts)
+    sx = sum(p[0] for p in pts); sy = sum(p[1] for p in pts); sz = sum(p[2] for p in pts)
+    sxx = sum(p[0] * p[0] for p in pts); syy = sum(p[1] * p[1] for p in pts)
+    sxy = sum(p[0] * p[1] for p in pts)
+    sxz = sum(p[0] * p[2] for p in pts); syz = sum(p[1] * p[2] for p in pts)
+    m = ((n, sx, sy), (sx, sxx, sxy), (sy, sxy, syy))
+    det = (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+           - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+           + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+    if abs(det) < 1e-9 * max(1.0, n) ** 3:
+        return None
+    r = (sz, sxz, syz)
+
+    def col(k):
+        return tuple(tuple(r[i] if j == k else m[i][j] for j in range(3)) for i in range(3))
+
+    def d3(a):
+        return (a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
+                - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+                + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]))
+
+    return d3(col(0)) / det, d3(col(1)) / det, d3(col(2)) / det
+
+
+def floor_plane_from_scan(points, pose: Pose2D, radius: float = 3.0, near: float = 1.5,
+                          band: float = 0.04, max_slope: float = 0.10,
+                          min_points: int = 100, iterations: int = 3):
+    """The floor round the robot as a FloorPlane, or None.
+
+    On the robot (2026-11-11) the built-in cloud's floor tilted while it
+    walked -- -0.07 m underfoot, +0.03 m two metres ahead, ~3 deg -- so one
+    floor height put carpet ahead at the obstacle threshold. Fit: start from
+    the floor layer close by (floor_from_scan within ``near``), then fit a
+    plane to the returns within ``band`` of it out to ``radius``, a few
+    rounds. Slopes over ``max_slope`` (5.7 deg) aren't a classroom floor:
+    flat instead."""
+    f0 = floor_from_scan(points, pose, radius=near)
+    if f0 is None:
+        return None
+    r2 = radius * radius
+    rel = [(x - pose.x, y - pose.y, z) for x, y, z in points
+           if (x - pose.x) ** 2 + (y - pose.y) ** 2 <= r2]
+    a, b, c = f0, 0.0, 0.0
+    for _ in range(iterations):
+        sel = [p for p in rel if abs(p[2] - (a + b * p[0] + c * p[1])) <= band]
+        if len(sel) < min_points:
+            break
+        fit = _fit_plane(sel)
+        if fit is None:
+            break
+        if abs(fit[1]) > max_slope or abs(fit[2]) > max_slope:
+            return FloorPlane(f0, 0.0, 0.0, pose.x, pose.y)
+        a, b, c = fit
+    return FloorPlane(a, b, c, pose.x, pose.y)
 
 
 def median(values):
