@@ -47,7 +47,8 @@ case "${1:-}" in
       classroom)  python3 "$SIM/worlds/make_worlds.py" ${AISLE:+--aisle "$AISLE"} >/dev/null; wfile="$SIM/worlds/classroom.world" ;;
       furnished)  python3 "$SIM/worlds/make_worlds.py" ${LAYOUT:+--layout "$LAYOUT"} >/dev/null; wfile="$SIM/worlds/furnished.world" ;;
       hall)       python3 "$SIM/worlds/make_worlds.py" ${LAYOUT:+--layout "$LAYOUT"} >/dev/null; wfile="$SIM/worlds/hall.world" ;;
-      *) echo "world must be small_room, box, classroom, furnished or hall" >&2; exit 2 ;;
+      detour)     python3 "$SIM/worlds/make_worlds.py" >/dev/null; wfile="$SIM/worlds/detour.world" ;;
+      *) echo "world must be small_room, box, classroom, furnished, hall or detour" >&2; exit 2 ;;
     esac
     ros_env
     # CHAMP's own bringup, with its controller moved off /cmd_vel (see the launch file)

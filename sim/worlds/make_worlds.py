@@ -18,6 +18,8 @@ furnished.world   -- exploration: a 9 x 7 m room, tables, chairs and a
 hall.world        -- exploration at scale: a 25 x 20 m hall, seven rows of
                      desks with aisles, a podium, chairs; --layout N moves
                      and removes some.
+detour.world      -- routes going round: a 7 x 5 m room, a chair on the
+                     second side of a 3 x 2 m rectangle.
 
 Coordinates: x forward from the start, y to the left, metres. Gazebo spawns
 the robot at the origin (sim/run_sim.sh), so the route geometry here
@@ -153,6 +155,16 @@ def hall(layout: int) -> str:
     return HEADER.format(name=f"hall layout {layout}") + "".join(parts) + FOOTER
 
 
+def detour() -> str:
+    """A 7 x 5 m room and one chair in the middle of the second side of a
+    3 x 2 m left-hand rectangle (demo.sh --shape rectangle --length 3.0
+    --width 2.0): the route must go round it (route.py). Robot 2026-11-11:
+    a chair on the second side stopped the route."""
+    parts = walls(-1.5, 5.5, -1.5, 3.5)
+    parts.append(box("chair", 3.0, 1.0, 0.5, 0.5, 0.9, "0.3 0.3 0.35"))
+    return HEADER.format(name="detour") + "".join(parts) + FOOTER
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--aisle", type=float, default=1.2, help="clear aisle width, m")
@@ -169,6 +181,7 @@ def main(argv=None) -> int:
         classroom(a.aisle, a.aisle_length, a.room_length, a.room_width))
     (a.out / "furnished.world").write_text(furnished(a.layout))
     (a.out / "hall.world").write_text(hall(a.layout))
+    (a.out / "detour.world").write_text(detour())
     print(f"wrote {a.out / 'small_room.world'} (box={'yes' if a.box else 'no'}), "
           f"{a.out / 'classroom.world'} (aisle {a.aisle} m) and "
           f"{a.out / 'furnished.world'} (layout {a.layout})")
