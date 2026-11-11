@@ -46,6 +46,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 from go2_survey_loop.explore import ExploreMission, ExploreParams
+from go2_survey_loop.route import DetourParams, RouteMission
 from go2_survey_loop.follower import FollowerParams, Mission, SafetyParams, State
 from go2_survey_loop.geometry import (
     Pose2D, plan_local, route_extent, to_world, yaw_from_quaternion,
@@ -91,6 +92,10 @@ class LoopNode(Node):
         d("explore_leg_max", 1.5)           # m
         d("explore_radius", 4.0)            # m from the start; geofence = this + margin
         d("explore_strategy", "frontier")   # or "greedy" (explore.py)
+        # routes: blocked ahead this long -> a clear path round (route.py)
+        d("route_detour", True)
+        d("detour_wait_s", 3.0)
+        d("detour_clearance", 0.80)         # m from any obstacle cell
         d("length", 0.0)
         d("width", 0.0)
         d("turn", "left")
@@ -269,11 +274,11 @@ class LoopNode(Node):
         if self.get_parameter("shape").value == "explore":
             # kept from before ~/start too: the first leg is planned at once
             self._obst_scans.append(obst)
-            if isinstance(self.mission, ExploreMission):
-                self._explore_scans += 1
-                rays = (ray_points(pts, pose, floor_z, self.obst)
-                        if self._explore_scans % 3 == 0 else ())     # CPU: every third scan
-                self.mission.observe(floor_xy(pts, pose, floor_z), obst, (pose.x, pose.y), rays)
+        if isinstance(self.mission, (ExploreMission, RouteMission)):
+            self._explore_scans += 1
+            rays = (ray_points(pts, pose, floor_z, self.obst)
+                    if self._explore_scans % 3 == 0 else ())         # CPU: every third scan
+            self.mission.observe(floor_xy(pts, pose, floor_z), obst, (pose.x, pose.y), rays)
 
     def _ages(self, now: float):
         oa = math.inf if self._pose_t is None else now - self._pose_t
@@ -388,8 +393,15 @@ class LoopNode(Node):
             self.mission = ExploreMission(start, now, self.follow, safety, ep, self.obst)
             what = f"exploring {ep.legs} legs within {ep.radius:.1f} m"
         else:
-            self.mission = Mission(to_world(start, local), start, now, self.follow, safety)
-            what = f"{len(local)} waypoints"
+            if g("route_detour"):
+                dp = DetourParams(wait_s=float(g("detour_wait_s")),
+                                  path_clearance=float(g("detour_clearance")))
+                self.mission = RouteMission(to_world(start, local), start, now, self.follow,
+                                            safety, dp, self.obst)
+                what = f"{len(local)} waypoints, going round obstacles"
+            else:
+                self.mission = Mission(to_world(start, local), start, now, self.follow, safety)
+                what = f"{len(local)} waypoints"
         self._last_state = None
         mode = "DRY RUN (nothing published)" if self.dry_run else "LIVE"
         res.success = True

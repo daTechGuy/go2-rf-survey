@@ -250,6 +250,18 @@ class Mission:
             self.state, self.reason = State.RUNNING, "skipped a waypoint by an obstacle"
         return True
 
+    def reroute(self, waypoints, index: int, reason: str) -> None:
+        """New waypoints, carrying on from ``index`` -- from a pause, a
+        detour round an obstacle (route.py). Unlike resume() it may leave
+        with the front lane still blocked: the detour starts by turning
+        away, and the front lane is checked again before every step
+        forward, the turn sweep before every turn on the spot."""
+        self.waypoints = list(waypoints)
+        self.index = index
+        self.state, self.reason = State.RUNNING, reason
+        self._turning, self._turn_dir, self._stall_ref = False, 0.0, None
+        self._clear_since = None
+
     def resume(self, odom_age: float, cloud_age: float, front: int, near: int):
         """Operator resume. Returns (ok, message). Refuses unless it is
         currently safe to move -- resuming into an obstacle is not a resume."""

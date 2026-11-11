@@ -1,0 +1,192 @@
+"""A route that goes round what blocks it. Pure, no ROS, no clock.
+
+A plain route (follower.Mission) stops in front of anything in its way and
+waits for the operator. On the robot (2026-11-11) a rectangle in a classroom
+stopped for a chair on its second side, though there was room to step
+round it. ``RouteMission`` keeps the same route and the same safety layers,
+plus a coverage grid of what the LiDARs have seen (coverage.py, as when
+exploring). When the way ahead stays blocked for ``wait_s`` -- a person may
+just be passing -- it plans a clear path round to the waypoint and splices
+it into the route:
+
+* only for something **ahead** (the front lane). Something inside the
+  clearance ring still stops everything, as before;
+* the path keeps ``path_clearance`` from every obstacle cell, over floor
+  that was actually seen; a waypoint that is itself too close to the
+  obstacle is skipped and the next one aimed for (``max_skip``, one);
+* at most ``max_detours``; each no longer than ``max_ratio`` times the
+  straight way plus ``slack_m``, and inside the geofence;
+* no clear way round: it stays paused and looks again every ``retry_s``.
+  The remote works as always.
+
+Every step of a detour goes through the same Mission.step: front-lane stop,
+clearance ring, turn check, stall check, geofence, time limit.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+from go2_survey_loop import coverage
+from go2_survey_loop.follower import Command, FollowerParams, Mission, SafetyParams, State
+from go2_survey_loop.geometry import Pose2D
+from go2_survey_loop.obstacles import ObstacleParams
+
+
+@dataclass(frozen=True)
+class DetourParams:
+    enabled: bool = True
+    wait_s: float = 3.0             # blocked this long before going round
+    retry_s: float = 2.0            # no way round: look again this often
+    # The route's 0.55 m ring + up to 0.18 m a 0.25 m cell can hide + wobble.
+    # Exploring uses 0.95 with its 0.70 ring.
+    path_clearance: float = 0.80
+    max_detours: int = 4
+    # waypoints a detour may skip (one inside the obstacle's clearance, e.g. a
+    # chair by a corner). More would quietly drop the route: a wall of desks
+    # across it once sent the test robot straight home.
+    max_skip: int = 1
+    max_ratio: float = 3.0
+    slack_m: float = 1.0
+    grid_cell: float = 0.25
+    lidar_h: float = 0.35           # m above the floor: where rays start
+
+
+def path_length(start, waypoints) -> float:
+    d, (px, py) = 0.0, start
+    for x, y in waypoints:
+        d += math.hypot(x - px, y - py)
+        px, py = x, y
+    return d
+
+
+class RouteMission:
+    """Mission's interface (step, abort, resume, state, reason, progress),
+    plus ``observe`` for the grid, as ExploreMission."""
+
+    def __init__(self, waypoints, start: Pose2D, now: float,
+                 follow: FollowerParams = FollowerParams(),
+                 safety: SafetyParams = SafetyParams(),
+                 detour: DetourParams = DetourParams(),
+                 body: ObstacleParams = ObstacleParams()) -> None:
+        self.route = Mission(waypoints, start, now, follow, safety)
+        self.start, self.follow, self.safety, self.p, self.body = start, follow, safety, detour, body
+        self.grid = coverage.Grid(start.x, start.y, safety.geofence_m, detour.grid_cell)
+        self.observations = 0
+        self.detours = 0
+        self._blocked_since: float | None = None
+        self._tried_at: float | None = None
+
+    # ------------------------------------------------------------ delegation
+    @property
+    def state(self) -> State:
+        return self.route.state
+
+    @property
+    def reason(self) -> str:
+        return self.route.reason
+
+    @property
+    def waypoints(self):
+        return self.route.waypoints
+
+    def progress(self) -> str:
+        return self.route.progress()
+
+    def abort(self, now: float, reason: str = "stopped by operator") -> Command:
+        return self.route.abort(now, reason)
+
+    def resume(self, odom_age: float, cloud_age: float, front: int, near: int):
+        self._blocked_since = self._tried_at = None
+        return self.route.resume(odom_age, cloud_age, front, near)
+
+    def observe(self, floor_xy, obstacle_xy, origin=None, rays=()) -> None:
+        """One scan into the grid (loop_node, as for exploring)."""
+        self.grid.mark(floor_xy, obstacle_xy)
+        if origin is not None and rays:
+            self.grid.mark_rays(origin, rays, self.p.lidar_h, (self.body.z_min, self.body.z_max))
+        self.observations += 1
+
+    # ----------------------------------------------------------------- plan
+    def plan_detour(self, pose: Pose2D):
+        """(new waypoint list, index to carry on from, message) or None:
+        a clear path from here to the current waypoint -- or, if that one
+        is too close to the obstacle, the first later one it can reach."""
+        g, p = self.grid, self.p
+        here = g.cell_of(pose.x, pose.y)
+        if here is None:
+            return None
+        clear = g.clearance()
+        cost, parent = coverage.costs_from(g, here, clear, p.path_clearance)
+        wps, i = self.route.waypoints, self.route.index
+        for j in range(i, min(len(wps), i + p.max_skip + 1)):
+            tx, ty = wps[j]
+            goal = g.cell_of(tx, ty)
+            if goal is None:
+                continue
+            # the waypoint's own cell, or one next to it (0.25 m cells)
+            near = [c for c in cost if max(abs(c[0] - goal[0]), abs(c[1] - goal[1])) <= 1]
+            if not near:
+                continue
+            best = min(near, key=cost.get)
+            cells = coverage.path_to(parent, best)
+            path = coverage.simplify(g, clear, cells, p.path_clearance)
+            path = path[:-1] + [(tx, ty)] if path else [(tx, ty)]
+            straight = path_length((pose.x, pose.y), wps[i:j + 1])
+            if path_length((pose.x, pose.y), path) > p.max_ratio * straight + p.slack_m:
+                continue
+            fence = self.safety.geofence_m - 0.3
+            if any(math.hypot(x - self.start.x, y - self.start.y) > fence for x, y in path):
+                continue
+            skipped = j - i
+            new = wps[:i] + [(pose.x, pose.y)] + path + wps[j + 1:]
+            msg = (f"detour {self.detours + 1}: round an obstacle, {len(path)} waypoint(s), "
+                   f"{path_length((pose.x, pose.y), path):.1f} m"
+                   + (f", skipping {skipped} blocked waypoint(s)" if skipped else ""))
+            return new, i + 1, msg            # the robot's own spot starts the line
+        return None
+
+    # ----------------------------------------------------------------- step
+    def step(self, now: float, pose: Pose2D | None, odom_age: float,
+             cloud_age: float, front: int, near: int, turn_near: int = 0) -> Command:
+        cmd = self.route.step(now, pose, odom_age, cloud_age, front, near, turn_near)
+        k = self.safety.min_obstacle_points
+        if not (self.p.enabled and cmd.state == State.PAUSED
+                and self.route.reason.startswith("obstacle")):
+            if cmd.state != State.PAUSED:
+                self._blocked_since = self._tried_at = None
+            return cmd
+        fresh = pose is not None and odom_age <= self.safety.odom_timeout_s \
+            and cloud_age <= self.safety.cloud_timeout_s
+        if not fresh or near >= k:
+            # something beside it, or blind: not a moment to plan anything
+            self._blocked_since = None
+            return cmd
+        if self._blocked_since is None:
+            self._blocked_since = now
+        if now - self._blocked_since < self.p.wait_s:
+            return cmd
+        if front < k:
+            # it moved off: carry on along the route as it was
+            ok, _ = self.route.resume(odom_age, cloud_age, front, near)
+            self._blocked_since = self._tried_at = None
+            if ok:
+                self.route.reason = "the way cleared -- carrying on"
+            return Command(0.0, 0.0, True, self.route.state, self.route.reason)
+        if self.detours >= self.p.max_detours:
+            self.route.reason = (f"obstacle (front={front}) -- {self.detours} detours used, "
+                                 "waiting for the operator")
+            return Command(0.0, 0.0, True, State.PAUSED, self.route.reason)
+        if self._tried_at is not None and now - self._tried_at < self.p.retry_s:
+            return Command(0.0, 0.0, True, State.PAUSED, self.route.reason)
+        self._tried_at = now
+        plan = self.plan_detour(pose)
+        if plan is None:
+            self.route.reason = f"obstacle (front={front}) -- no clear way round, waiting"
+            return Command(0.0, 0.0, True, State.PAUSED, self.route.reason)
+        new, index, msg = plan
+        self.detours += 1
+        self.route.reroute(new, index, msg)
+        self._blocked_since = self._tried_at = None
+        return Command(0.0, 0.0, True, State.RUNNING, msg)
