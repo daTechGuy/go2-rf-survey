@@ -37,6 +37,14 @@ from go2_survey_loop.loop_node import cloud_points  # noqa: E402
 
 MOUNT = Path("/workspace/config/mid360_mount.yaml")
 
+# The robot itself, in its body frame (x forward, z up from the body centre):
+# the Mid-360 on the back sees the top of the head 0.30-0.45 m ahead in every
+# scan (2026-11-11) -- just past the loop's 0.35 m nose, so its stop check
+# counted the robot's own head as an obstacle in front. Padded for leg swing.
+SELF_X = (-0.50, 0.50)
+SELF_HALF_Y = 0.25
+SELF_TOP_Z = 0.30
+
 
 def read_mount(path: Path) -> dict:
     """The flat key: value file mid360_calibrate.py writes."""
@@ -92,6 +100,11 @@ class Mid360ToOdom(Node):
         q, t = o.pose.pose.orientation, o.pose.pose.position
         R = quat_matrix(q.x, q.y, q.z, q.w)
         base = pts @ self.R_ext.T + self.t_ext                 # Mid-360 -> robot body
+        on_robot = ((base[:, 0] >= SELF_X[0]) & (base[:, 0] <= SELF_X[1])
+                    & (np.abs(base[:, 1]) <= SELF_HALF_Y) & (base[:, 2] <= SELF_TOP_Z))
+        base = base[~on_robot]
+        if base.size == 0:
+            return
         odom = base @ R.T + np.array([t.x, t.y, t.z])          # robot body -> odom
         out = PointCloud2(header=Header(stamp=msg.header.stamp, frame_id=o.header.frame_id))
         out.height, out.width = 1, len(odom)
