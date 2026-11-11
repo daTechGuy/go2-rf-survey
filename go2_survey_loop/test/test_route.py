@@ -118,6 +118,19 @@ class TestGoesRound(unittest.TestCase):
                                         DetourParams().path_clearance - 1e-6,
                                         f"detour waypoint {(x, y)}")
 
+    def test_round_the_far_side_of_an_unseen_corner(self):
+        # sim 2026-11-11: round the OUTSIDE of the chair; planned when only
+        # its near side was seen, the last leg cut past its far corner 0.45 m
+        # off. A cupboard inside the rectangle forces the outside way here.
+        cupboard = box(1.6, 0.6, 2.2, 1.6)
+        for cx, cy in [(3.0, 1.0), (3.1, 0.9), (2.95, 1.15)]:
+            for gain in (1.0, 0.5):
+                with self.subTest(chair=(cx, cy), yaw_gain=gain):
+                    m = route_mission()
+                    _, log, closest = run(m, ROOM + cupboard + chair(cx, cy), yaw_gain=gain)
+                    self.assertGreater(closest, BODY.clearance_radius)
+                    self.assertEqual(m.state, State.DONE, m.reason)
+
     def test_a_plain_route_just_waits(self):
         m = route_mission(cls=Mission)
         _, log, _ = run(m, ROOM + self.obstacle)
