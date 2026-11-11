@@ -21,7 +21,8 @@ survey waits for it.
 |---|---|
 | 00 Access and inventory | ✅ 2026-10-20 (eth0, NVIDIA runtime); password left at default (demo); key-based `ssh go2` |
 | 01 ROS runtime | ✅ Humble container builds and runs on the robot, Unitree msgs baked in |
-| 02 Mid-360 bring-up | 🟨 at `192.168.123.20`; `livox_ros_driver2` initialises but receives no data (unresolved) |
+| 02 Mid-360 bring-up | ✅ streams on its own to `.18:56301`; the Livox driver never binds it, so `tools/mid360_udp.py` receives it → `/livox/lidar` |
+| 03b Mid-360 mount | ✅ 2026-11-11 calibrated: pitch 13.9° (not 22), x 0.22 m; agrees with the built-in LiDAR to 1.8 cm top-down |
 | 03 Mount and TF | 🟨 mounted nose-down; exact pitch still to measure for URDF |
 | 04 SLAM | 🟨 config written; mapping meanwhile = built-in `/utlidar/*` + `tools/bag_to_map.py` |
 | 05 **WiFi survey** | ✅ written + tested — the deliverable (deferred) |
@@ -70,9 +71,20 @@ config/mid360_mount.yaml), `mid360-up` (driver with our config +
 for stops / turn memory / exploring). Sim stand-in: calibrated exactly,
 clouds agree to 1.5 cm, explore done.
 
-**Next action:** on the robot: `go2loop.sh mid360-check` (+ the sudo
-tcpdump it prints); then guide 04 (turn test, 1 m walk, explore — watch the
-podium/desk). Then `python tools\get_results.py` on the laptop.
+**Session 2026-11-11:** WiFi to the robot: USB adapter RTL8812BU
+(`0bda:b812`), driver built on the robot from lwfinger/rtw88 with two 5.10
+patches (`~/build/rtw88`, installed under `extra/rtw88`). The Verizon MiFi
+isolates its clients (no setting), so the robot joins the laptop's Mobile
+Hotspot "LENOVO-LAPTOP 7556": robot `192.168.137.247`, `ssh go2w`. Mid-360
+calibrated (`config/mid360_mount.yaml` on the robot): it sees the **ceiling**
+far more than the floor, so `mid360_calibrate.py` now levels on the ceiling,
+takes height from the floor sliver ahead, removes the body's own tilt
+(mid360_to_odom applies it — it was counted twice), and refines yaw/x/y on
+walls both LiDARs see. The built-in `/utlidar/cloud_deskewed` stops ~1.3 m
+above the floor and covers only part of the room; the Mid-360 sees all of it.
+
+**Next action:** guide 04 on the robot (turn test, 1 m walk, explore with
+`--mid360` — watch the podium/desk). Then `python tools\get_results.py` on the laptop.
 Then the 3 m route / classroom (guide 02). Each session:
 route (user sudo) → preflight → `bridge-up` + `turn-test --i-confirm-breathing`
 (defaults to the 1.0 rad/s × 0.5 s turn that passes) → [ASK] demo. Robot-side
@@ -104,7 +116,7 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
 
 - **Pure functions for anything that can be wrong quietly.** `iw` parsing,
   velocity limiting, the watchdog, and the FOV maths are all ROS-free and
-  clock-free so they can be tested without hardware. 375 tests run on a bare
+  clock-free so they can be tested without hardware. 422 tests run on a bare
   Python. Keep it that way — if new logic can be made testable, make it.
 - **Tests before hardware.** `python tools/run_tests.py` must stay green and
   must not acquire dependencies.
@@ -141,6 +153,8 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
   and RTL8814AU was never mainlined. See [`docs/HARDWARE.md`](docs/HARDWARE.md).
 - The user owns an Edimax EW-7833UAC (`7392:a833`, RTL8814AU) — tested, works
   as hardware, wrong chipset. Recommendation is to replace it.
+- In use (2026-11-11): RTL8812BU USB adapter — not mainline on 5.10, but
+  lwfinger/rtw88 builds with two small patches (see session notes above).
 - Mid-360 vertical FOV is −7° to +52°, biased **upward**. Mounted level it
   cannot see the floor within 3.3 m. Pitch it ~22° nose-down.
 

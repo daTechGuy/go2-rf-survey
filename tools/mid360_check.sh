@@ -44,7 +44,7 @@ ip -br addr show | grep -q "$HOST_IP" && echo "OK   this computer is $HOST_IP" \
 
 echo "== 2. programs already using a Mid-360 (suspect B)"
 others=$(ps -eo pid,user,etime,args | grep -i -E "mid360|livox|unitree_slam|lio_|slam" \
-         | grep -v -E "grep|mid360_check" || true)
+         | grep -v -E "grep|mid360[-_]check" || true)   # go2loop.sh's own "mid360-check" args too
 if [ -n "$others" ]; then echo "$others" | sed 's/^/     /' | cut -c1-150
   echo "WARN something else may hold the sensor (above)"; verdict+=("another Mid-360 program is running")
 else echo "OK   none running"; fi

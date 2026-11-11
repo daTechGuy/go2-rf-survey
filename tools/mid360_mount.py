@@ -54,15 +54,85 @@ def apply(R, t, p):
             R[2][0] * p[0] + R[2][1] * p[1] + R[2][2] * p[2] + t[2])
 
 
+def matrix_rpy(R):
+    """(roll, pitch, yaw) of R = Rz(yaw) Ry(pitch) Rx(roll)."""
+    pitch = -math.asin(max(-1.0, min(1.0, R[2][0])))
+    return math.atan2(R[2][1], R[2][2]), pitch, math.atan2(R[1][0], R[0][0])
+
+
+def mount_in_body(roll, pitch, yaw, t, body_roll, body_pitch):
+    """The mount measured against level (floor/ceiling) -> the mount on the
+    body, given the body's own tilt while measuring (from odometry).
+    mid360_to_odom applies the body's full orientation to every scan, so a
+    level-frame mount would count the body's tilt twice -- on the robot
+    (2026-11-11, body rolled -2.2 deg) that lifted the floor 9 cm.
+    Returns ((roll, pitch, yaw), (x, y, z))."""
+    B = rpy_matrix(body_roll, body_pitch, 0.0)
+    Bt = tuple(zip(*B))
+    L = rpy_matrix(roll, pitch, yaw)
+    R = tuple(tuple(sum(Bt[i][k] * L[k][j] for k in range(3)) for j in range(3)) for i in range(3))
+    return matrix_rpy(R), apply(Bt, (0.0, 0.0, 0.0), t)
+
+
+def icp_2d(ref_xy, pts_xy, iterations: int = 15, max_d: float = 0.15):
+    """Rigid 2D fit of ``pts_xy`` onto ``ref_xy`` (both seen from the robot,
+    level frame): only pairs within ``max_d`` count, so what one LiDAR sees
+    and the other doesn't is ignored. Returns (theta, sx, sy, pairs,
+    median gap) with p' = R(theta) p + s, or None with under 50 pairs."""
+    grid = {}
+    for x, y in ref_xy:
+        grid.setdefault((math.floor(x / max_d), math.floor(y / max_d)), []).append((x, y))
+
+    def pairs(th, sx, sy):
+        c, s = math.cos(th), math.sin(th)
+        out = []
+        for x, y in pts_xy:
+            px, py = c * x - s * y + sx, s * x + c * y + sy
+            i, j = math.floor(px / max_d), math.floor(py / max_d)
+            best, bq = max_d * max_d, None
+            for a in (-1, 0, 1):
+                for b in (-1, 0, 1):
+                    for q in grid.get((i + a, j + b), ()):
+                        d2 = (q[0] - px) ** 2 + (q[1] - py) ** 2
+                        if d2 < best:
+                            best, bq = d2, q
+            if bq is not None:
+                out.append(((px, py), bq, math.sqrt(best)))
+        return out
+
+    th = sx = sy = 0.0
+    for _ in range(iterations):
+        pr = pairs(th, sx, sy)
+        if len(pr) < 50:
+            return None
+        n = len(pr)
+        max_ = sum(p[0][0] for p in pr) / n; may = sum(p[0][1] for p in pr) / n
+        mbx = sum(p[1][0] for p in pr) / n; mby = sum(p[1][1] for p in pr) / n
+        num = sum((a[0] - max_) * (b[1] - mby) - (a[1] - may) * (b[0] - mbx) for a, b, _ in pr)
+        den = sum((a[0] - max_) * (b[0] - mbx) + (a[1] - may) * (b[1] - mby) for a, b, _ in pr)
+        d = math.atan2(num, den)
+        c, s = math.cos(d), math.sin(d)
+        # p'' = R(d) p' + (mb - R(d) ma), with p' = R(th) p + s
+        tx, ty = mbx - (c * max_ - s * may), mby - (s * max_ + c * may)
+        th, sx, sy = th + d, c * sx - s * sy + tx, s * sx + c * sy + ty
+    pr = pairs(th, sx, sy)
+    if len(pr) < 50:
+        return None
+    gaps = sorted(p[2] for p in pr)
+    return th, sx, sy, len(pr), gaps[len(gaps) // 2]
+
+
 # ------------------------------------------------------------------- floor
-def fit_floor(points, iterations: int = 300, tol: float = 0.02, max_tilt_deg: float = 60.0,
-              min_height: float = 0.15, seed: int = 1):
+def fit_floor(points, iterations: int = 300, tol: float = 0.02, max_tilt_deg: float = 40.0,
+              min_height: float = 0.15, seed: int = 1, ceiling: bool = False):
     """RANSAC: the plane with the most points within ``tol`` that faces the
     sensor from below (normal within ``max_tilt_deg`` of the sensor's own +z,
     at least ``min_height`` under it). Walls and desks fail that test.
-    Returns (normal pointing up, height of the sensor above it, inliers) or
-    None. The normal is refined by a least-squares-free average over inlier
-    triples -- plenty at these point counts."""
+    ``ceiling``: the same, but the plane above the sensor -- on the robot
+    (2026-11-11) the Mid-360 sees the floor only from ~1.6 m ahead and the
+    ceiling everywhere, so the ceiling is the better level reference.
+    Returns (normal pointing up, distance from the sensor to it, inliers) or
+    None. The normal is refined from the inliers' spread."""
     pts = list(points)
     if len(pts) < 50:
         return None
@@ -79,7 +149,7 @@ def fit_floor(points, iterations: int = 300, tol: float = 0.02, max_tilt_deg: fl
         if n[2] < cos_max:
             continue
         d = -_dot(n, a)                            # plane: n.p + d = 0; sensor at origin
-        if d < min_height:                         # sensor must be above it
+        if (-d if ceiling else d) < min_height:    # sensor must be below / above it
             continue
         inl = sum(1 for p in pts if abs(_dot(n, p) + d) <= tol)
         if best is None or inl > best[2]:
@@ -104,13 +174,44 @@ def fit_floor(points, iterations: int = 300, tol: float = 0.02, max_tilt_deg: fl
     if v[2] < 0:
         v = (-v[0], -v[1], -v[2])
     d = -_dot(v, (cx, cy, cz))
-    return v, d, len(inl)
+    return v, (-d if ceiling else d), len(inl)
+
+
+def level_peak(zs, bin_m: float = 0.02, min_points: int = 30):
+    """The height where most of ``zs`` pile up -- a floor or ceiling seen by
+    the built-in LiDAR (hanging lights are a few points, the ceiling is
+    thousands). None if no bin holds ``min_points``."""
+    counts = {}
+    for z in zs:
+        k = math.floor(z / bin_m)
+        counts[k] = counts.get(k, 0) + 1
+    if not counts:
+        return None
+    k, n = max(counts.items(), key=lambda kv: kv[1])
+    if n < min_points:
+        return None
+    # centre of mass of the peak bin and its neighbours
+    num = sum((j + 0.5) * bin_m * counts.get(j, 0) for j in (k - 1, k, k + 1))
+    return num / sum(counts.get(j, 0) for j in (k - 1, k, k + 1))
+
+
+def floor_below(points, up, min_drop: float = 0.15, band: float = 0.08):
+    """Height of the sensor over the floor, measuring along ``up`` (from the
+    ceiling fit): the lowest dense level of points below the sensor. The
+    floor is the lowest thing there is, so look only within ``band`` of the
+    deepest points (2nd percentile) -- chair seats and the like sit higher.
+    None if too little is below the sensor."""
+    depth = sorted(-_dot(up, p) for p in points if -_dot(up, p) >= min_drop)
+    if len(depth) < 50:
+        return None
+    deep = depth[int(len(depth) * 0.98)]
+    return level_peak([d for d in depth if d >= deep - band])
 
 
 def mount_from_floor(normal, height):
     """(roll, pitch, height) of the sensor over a level floor, from the floor
-    normal seen in the sensor frame. World up in sensor coordinates is
-    R^T (0,0,1) = (-sin p, cos p sin r, cos p cos r)."""
+    (or ceiling) normal seen in the sensor frame, pointing up. World up in
+    sensor coordinates is R^T (0,0,1) = (-sin p, cos p sin r, cos p cos r)."""
     ux, uy, uz = normal
     pitch = -math.asin(max(-1.0, min(1.0, ux)))
     roll = math.atan2(uy, uz)
