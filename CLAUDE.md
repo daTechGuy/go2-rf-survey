@@ -83,8 +83,22 @@ takes height from the floor sliver ahead, removes the body's own tilt
 walls both LiDARs see. The built-in `/utlidar/cloud_deskewed` stops ~1.3 m
 above the floor and covers only part of the room; the Mid-360 sees all of it.
 
-**Next action:** guide 04 on the robot (turn test, 1 m walk, explore with
-`--mid360` — watch the podium/desk). Then `python tools\get_results.py` on the laptop.
+Later that session: Stage 1 + 2 passed over WiFi. Explore from the open
+front of the classroom ended at once, correctly ("everything reachable
+already seen": desks too tight for its 0.95 m paths); a no-motion rehearsal
+mapped the whole room from both LiDARs. A 1.5 x 1 m rectangle (a) paused
+"no room to turn" in open floor -- walking, the built-in cloud tilts ~3 deg,
+carpet 2 m ahead read 10 cm high; fixed for now by the floor-layer median
+and `obstacle_z_min` 0.13 (stopgap) -- then (b) stopped for a real chair.
+Built after: **route detours** (`route.py`, on by default: blocked ahead
+3 s -> a 0.80 m-clear path round, splice, carry on) and a **floor plane per
+scan** (`floor_plane`, off until replayed on the robot's recordings).
+Robot code is synced by `scp` (its git HEAD is stale); WiFi in the open area
+is weak, so arm with `setsid nohup`.
+
+**Next action:** replay the floor plane on the 2026-11-11 rectangle bags
+(ghosts gone, chair still seen?) -> `floor_plane` on, `obstacle_z_min` back
+to 0.10; then [ASK] the rectangle with a chair on its second side (detour). Then `python tools\get_results.py` on the laptop.
 Then the 3 m route / classroom (guide 02). Each session:
 route (user sudo) → preflight → `bridge-up` + `turn-test --i-confirm-breathing`
 (defaults to the 1.0 rad/s × 0.5 s turn that passes) → [ASK] demo. Robot-side
@@ -116,7 +130,7 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
 
 - **Pure functions for anything that can be wrong quietly.** `iw` parsing,
   velocity limiting, the watchdog, and the FOV maths are all ROS-free and
-  clock-free so they can be tested without hardware. 422 tests run on a bare
+  clock-free so they can be tested without hardware. 437 tests run on a bare
   Python. Keep it that way — if new logic can be made testable, make it.
 - **Tests before hardware.** `python tools/run_tests.py` must stay green and
   must not acquire dependencies.
