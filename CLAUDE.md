@@ -96,9 +96,16 @@ scan** (`floor_plane`, off until replayed on the robot's recordings).
 Robot code is synced by `scp` (its git HEAD is stale); WiFi in the open area
 is weak, so arm with `setsid nohup`.
 
-**Next action:** replay the floor plane on the 2026-11-11 rectangle bags
-(ghosts gone, chair still seen?) -> `floor_plane` on, `obstacle_z_min` back
-to 0.10; then [ASK] the rectangle with a chair on its second side (detour). Then `python tools\get_results.py` on the laptop.
+End of the session: detours worked live once (chair 1.3 m ahead, 1.5 x 1 m
+rectangle: stop, 3 s, round with 3 re-plans, done in 40 s), then failed
+twice (a chair at the edge of the front lane flickered its count; a
+different start heading left no way round). Floor-plane replay on the
+robot's bags: the floor-layer median alone already removes the ghosts;
+plane harmless, still off. The robot's preflight fails `motion_switcher
+CheckMode` on the first arm after a run, every time; a rerun passes.
+User chose **D5: the CMU stack**.
+
+**Next action:** field guide 05, S0 (install, nothing moves) then S1. Then `python tools\get_results.py` on the laptop.
 Then the 3 m route / classroom (guide 02). Each session:
 route (user sudo) → preflight → `bridge-up` + `turn-test --i-confirm-breathing`
 (defaults to the 1.0 rad/s × 0.5 s turn that passes) → [ASK] demo. Robot-side
@@ -122,6 +129,12 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
   surveying in one autonomous pass is where projects of this shape stall.
 - **D4** — Stop-and-scan, timestamped at scan *completion*. A moving scan
   smears 1–2.5 m of travel into one sample.
+- **D5** (2026-11-11) — Obstacle avoidance: try the CMU Go2 autonomy stack
+  (path-library local planner, native Foxy on the robot) rather than keep
+  growing our own stop/wait/detour logic; our routes, exploration, mapping,
+  Mid-360 and survey sit on top and send it `/way_point` goals. Plan and
+  code facts: [`docs/field-guide/05-cmu-stack.md`](docs/field-guide/05-cmu-stack.md).
+  Our `route.py` detours stay as the fallback until it is proven here.
 - The bridge talks to `unitree_ros2`'s `/api/sport/request` topic rather than
   linking `unitree_sdk2`. No C++ build against an external SDK, and the safety
   logic stays unit-testable.
