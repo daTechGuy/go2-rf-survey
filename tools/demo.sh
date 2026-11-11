@@ -15,7 +15,7 @@
 #                   and exploring (needs go2loop.sh mid360-calibrate first);
 #                   the built-in LiDAR stays the one that must be fresh
 #
-# Options: --shape out_and_back|rectangle  --width W (rectangle)
+# Options: --shape out_and_back|rectangle  --width W --turn left|right (rectangle)
 #          --backend sport|sport_prep|avoid  --name NAME  --no-viz  --no-map
 #
 # Untethered (no laptop cable during the run):
@@ -48,7 +48,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO" || exit 1
 G="bash $REPO/tools/go2loop.sh"
 
-LENGTH=""; WIDTH=""; SHAPE=out_and_back; BACKEND=sport; NAME=demo
+LENGTH=""; WIDTH=""; SHAPE=out_and_back; TURN=left; BACKEND=sport; NAME=demo
 EXPLORE=0; LEGS=8; RADIUS=4.0; LEG_MAX=1.5; MINUTES=5; STRATEGY=frontier; MID360=0
 BREATHING=0; REHEARSE=0; VIZ=1; MAP=1; SKIP_GATE=0
 DETACH_RUN=0; REMOTE=0; WAIT=600
@@ -62,6 +62,7 @@ while [ $# -gt 0 ]; do
     --length) LENGTH="$2"; shift 2 ;;
     --width) WIDTH="$2"; shift 2 ;;
     --shape) SHAPE="$2"; shift 2 ;;
+    --turn) TURN="$2"; shift 2 ;;
     --explore) EXPLORE=1; shift ;;
     --legs) LEGS="$2"; shift 2 ;;
     --radius) RADIUS="$2"; shift 2 ;;
@@ -229,7 +230,7 @@ if [ "$EXPLORE" = 1 ]; then
   LOOP_ARGS="$LOOP_ARGS -p turn_clearance:=0.70"
 else
   LOOP_ARGS="-p shape:=$SHAPE -p length:=$LENGTH -p dry_run:=$DRY"
-  [ -n "$WIDTH" ] && LOOP_ARGS="$LOOP_ARGS -p width:=$WIDTH"
+  [ -n "$WIDTH" ] && LOOP_ARGS="$LOOP_ARGS -p width:=$WIDTH -p turn:=$TURN"
 fi
 LOOP_ARGS="$LOOP_ARGS -p max_duration_s:=$((MINUTES * 60)).0"
 [ "$MID360" = 1 ] && LOOP_ARGS="$LOOP_ARGS -p extra_cloud_topic:=/mid360/cloud_odom"
