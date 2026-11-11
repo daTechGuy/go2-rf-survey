@@ -145,6 +145,20 @@ class TestFloor(unittest.TestCase):
     def test_too_few_points_is_none(self):
         self.assertIsNone(floor_from_scan([(0.5, 0.0, -0.3)] * 10, ORIGIN))
 
+    def test_carpet_floor_is_its_middle(self):
+        # the robot 2026-11-11: carpet returns spread ~7 cm. The floor must
+        # be the carpet's middle, not its low tail, or carpet reads as obstacle.
+        import random
+        rng = random.Random(3)
+        pts = [(rng.uniform(-1.5, 1.5), rng.uniform(-1.5, 1.5), -0.024 + rng.gauss(0, 0.017))
+               for _ in range(3000)]
+        pts += [(1.0, 0.5, z / 10) for z in range(1, 9)] * 30      # a chair
+        f = floor_from_scan(pts, ORIGIN)
+        self.assertAlmostEqual(f, -0.024, delta=0.008)
+        carpet_high = -0.024 + 3 * 0.017                           # a 3-sigma carpet return
+        self.assertEqual(obstacle_xy([(0.6, 0.0, carpet_high)], ORIGIN, f), [])
+        self.assertEqual(len(obstacle_xy([(0.6, 0.0, -0.024 + 0.12)], ORIGIN, f)), 1)
+
     def test_median(self):
         self.assertEqual(median([3, 1, 2]), 2)
         self.assertEqual(median([4, 1, 2, 3]), 2.5)

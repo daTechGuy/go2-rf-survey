@@ -190,18 +190,26 @@ def floor_xy(points, pose: Pose2D, floor_z: float, band: float = 0.06,
 
 
 def floor_from_scan(points, pose: Pose2D, radius: float = 2.0,
-                    percentile: float = 2.0, min_points: int = 50):
-    """Floor height from the low tail of z near the robot, or None if the
-    scan has too few nearby points to say. The robot's LiDAR sees the floor
-    all around it, so the low end of the nearby z distribution is the floor;
-    a percentile rather than the minimum ignores stray below-floor returns."""
+                    percentile: float = 2.0, min_points: int = 50, layer: float = 0.06):
+    """Floor height near the robot, or None if the scan has too few nearby
+    points to say. The robot's LiDAR sees the floor all around it, so the low
+    end of the nearby z distribution is the floor layer (a percentile rather
+    than the minimum ignores stray below-floor returns); the floor is the
+    middle of that layer -- the median of points within ``layer`` above it.
+
+    Not the low tail itself: on carpet (2026-11-11) the returns spread ~7 cm,
+    the 2nd percentile sat 3.6 cm under the median, so the 10 cm obstacle
+    band began ~6 cm above the carpet. Ten seconds of turn memory collected
+    a few such carpet points and a route refused to turn in open floor."""
     r2 = radius * radius
     zs = sorted(z for x, y, z in points
                 if (x - pose.x) ** 2 + (y - pose.y) ** 2 <= r2)
     if len(zs) < min_points:
         return None
     k = min(len(zs) - 1, max(0, int(len(zs) * percentile / 100.0)))
-    return zs[k]
+    low = zs[k]
+    band = [z for z in zs[k:] if z <= low + layer]
+    return band[len(band) // 2]
 
 
 def median(values):

@@ -122,7 +122,11 @@ class LoopNode(Node):
         d("body_front", 0.35)
         d("body_rear", 0.40)
         d("body_half_width", 0.20)
-        d("obstacle_z_min", 0.10)
+        # 0.13, not 0.10 -- STOPGAP (2026-11-11): walking, the built-in cloud
+        # tilts ~3 deg (floor -0.07 underfoot, +0.03 two metres ahead), so
+        # carpet ahead reached 0.10 and a route refused to turn in open floor.
+        # Replay: 19 ghost points at 0.10, 1 at 0.12. Real fix: a floor plane.
+        d("obstacle_z_min", 0.13)
         d("obstacle_z_max", 1.00)
         d("min_obstacle_points", 5)
         d("odom_timeout_s", 0.5)
