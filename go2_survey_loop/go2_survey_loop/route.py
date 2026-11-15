@@ -148,7 +148,9 @@ class RouteMission:
         best = min(near, key=cost.get)
         # ends on the clear cell by the waypoint, not the waypoint itself:
         # sim 2026-11-11, a corner 0.75 m from the chair
-        path = coverage.simplify(g, clear, coverage.path_to(parent, best), p.path_clearance)
+        path = coverage.simplify(
+            g, clear, coverage.path_to(parent, best),
+            p.path_clearance, hard_min=self.body.clearance_radius)
         straight = path_length(start_xy, [target])
         if path_length((pose.x, pose.y), path) > p.max_ratio * straight + p.slack_m:
             return None
@@ -156,6 +158,22 @@ class RouteMission:
         if any(math.hypot(x - self.start.x, y - self.start.y) > fence for x, y in path):
             return None
         return path
+
+    def _rejoin_candidates(self, a, b):
+        """When corner ``a`` is itself inside the obstacle's clearance, try
+        rejoining the next route segment ``a -> b`` just past the obstacle
+        before falling back to ``b`` itself (which may still be unseen)."""
+        ax, ay = a
+        bx, by = b
+        seg = math.hypot(bx - ax, by - ay)
+        step = self.p.grid_cell
+        out = []
+        d = step
+        while d < seg - step * 0.5:
+            out.append((ax + (bx - ax) * d / seg, ay + (by - ay) * d / seg))
+            d += step
+        out.append(b)
+        return out
 
     def _search(self, pose: Pose2D):
         g = self.grid
@@ -170,31 +188,39 @@ class RouteMission:
     def plan_detour(self, pose: Pose2D):
         """(new waypoint list, index to carry on from, message) or None:
         a clear path from here to the current waypoint -- or, if that one
-        is too close to the obstacle, the first later one it can reach."""
+        is too close to the obstacle, the earliest clear point along the
+        next route leg (up to ``max_skip`` waypoints ahead)."""
         found = self._search(pose)
         if found is None:
             return None
         cost, parent, clear = found
         wps, i = self.route.waypoints, self.route.index
         for j in range(i, min(len(wps), i + self.p.max_skip + 1)):
-            path = self._path_to(pose, cost, parent, clear, (pose.x, pose.y), wps[j])
-            if path is None:
-                continue
-            self.detour_paths.append(path)
-            new = wps[:i] + [(pose.x, pose.y)] + path + wps[j + 1:]
-            self._detour = {"end": i + len(path), "target": wps[j], "replans": 0}
-            skipped = j - i
-            msg = (f"detour {self.detours + 1}: round an obstacle, {len(path)} waypoint(s), "
-                   f"{path_length((pose.x, pose.y), path):.1f} m"
-                   + (f", skipping {skipped} blocked waypoint(s)" if skipped else ""))
-            return new, i + 1, msg            # the robot's own spot starts the line
+            targets = ([wps[j]] if j == i
+                       else self._rejoin_candidates(wps[j - 1], wps[j]))
+            for tgt in targets:
+                path = self._path_to(pose, cost, parent, clear, (pose.x, pose.y), tgt)
+                if path is None:
+                    continue
+                self.detour_paths.append(path)
+                tail = wps[j + 1:] if tgt == wps[j] else wps[j:]
+                new = wps[:i] + [(pose.x, pose.y)] + path + tail
+                self._detour = {"end": i + len(path), "target": tgt, "replans": 0}
+                skipped = j - i
+                msg = (f"detour {self.detours + 1}: round an obstacle, {len(path)} waypoint(s), "
+                       f"{path_length((pose.x, pose.y), path):.1f} m"
+                       + (f", skipping {skipped} blocked waypoint(s)" if skipped else ""))
+                return new, i + 1, msg        # the robot's own spot starts the line
         return None
 
     def _rest_clear(self, pose: Pose2D) -> bool:
-        """The rest of the detour -- from ``recheck_skip_m`` ahead of the
-        robot to its end -- still keeps the clearance on the newest map."""
+        """The rest of the detour still keeps the clearance on the newest map:
+        >= ``hard_min`` inside ``recheck_skip_m`` (while climbing out of a
+        sub-clearance stop spot) and >= ``path_clearance`` beyond."""
         g, p = self.grid, self.p
         clear = g.clearance()
+        hard = min(p.path_clearance, self.body.clearance_radius)
+        here = g.cell_of(pose.x, pose.y)
         i, end = self.route.index, self._detour["end"]
         pts = [(pose.x, pose.y)] + self.route.waypoints[i:end + 1]
         walked = 0.0
@@ -202,11 +228,13 @@ class RouteMission:
             seg = math.hypot(bx - ax, by - ay)
             n = max(1, int(seg / 0.1))
             for k in range(n + 1):
-                if walked + seg * k / n < p.recheck_skip_m:
-                    continue
                 c = g.cell_of(ax + (bx - ax) * k / n, ay + (by - ay) * k / n)
-                if c is None or g.state(c) == coverage.OCC \
-                        or clear.get(c, 3.0) < p.path_clearance - 1e-6:
+                if c is None or g.state(c) == coverage.OCC:
+                    return False
+                if c == here:
+                    continue
+                req = hard if walked + seg * k / n < p.recheck_skip_m else p.path_clearance
+                if clear.get(c, 3.0) < req - 1e-6:
                     return False
             walked += seg
         return True

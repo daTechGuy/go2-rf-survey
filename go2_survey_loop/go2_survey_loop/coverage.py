@@ -200,9 +200,10 @@ def costs_from(grid: Grid, start, clear: dict, min_clearance: float, cap: float 
     """Dijkstra from ``start`` over FREE cells with clearance >= min_clearance
     (the start cell itself is always allowed: the robot is already there; if
     ``start`` sits closer than ``min_clearance`` to an obstacle, it may step
-    through FREE cells that strictly increase clearance above ``hard_min``
-    until reaching ``min_clearance``). Returns ({cell: cost}, {cell: parent})."""
+    through FREE cells above ``hard_min`` that never move closer to the
+    obstacle until reaching ``min_clearance``). Returns ({cell: cost}, {cell: parent})."""
     n, s = grid.n, grid.cell
+    floor_cl = min(min_clearance, hard_min)
     cost, parent = {start: 0.0}, {start: None}
     heap = [(0.0, start)]
     while heap:
@@ -216,10 +217,13 @@ def costs_from(grid: Grid, start, clear: dict, min_clearance: float, cap: float 
                 continue
             cl = clear.get(nb, cap)
             if cl < min_clearance:
-                if c_cl >= min_clearance or cl <= c_cl + 1e-6 or cl < min(min_clearance, hard_min):
+                if c_cl >= min_clearance or cl < c_cl - 1e-6 or cl < floor_cl:
                     continue
             step = s * (_SQ2 if di and dj else 1.0)
-            nd = d + step * (1.0 + near_cost * max(0.0, 1.5 - cl))   # prefer mid-aisle
+            # While escaping (< min_clearance), heavily penalise staying below
+            # min_clearance so Dijkstra leaves the tight zone as fast as possible.
+            escape_pen = 4.0 if cl < min_clearance else 0.0
+            nd = d + step * (1.0 + near_cost * max(0.0, 1.5 - cl) + escape_pen)
             if nd < cost.get(nb, math.inf):
                 cost[nb], parent[nb] = nd, c
                 heapq.heappush(heap, (nd, nb))
@@ -253,6 +257,7 @@ def line_clear(grid: Grid, clear: dict, a, b, min_clearance: float, cap: float =
     floor_cl = min(min_clearance, hard_min)
     if not reached_min and (end_cl < first_cl - 1e-6 or end_cl < floor_cl):
         return False
+    prev_cl = first_cl
     for k in range(steps + 1):
         x, y = ax + (bx - ax) * k / steps, ay + (by - ay) * k / steps
         c = grid.cell_of(x, y)
@@ -265,8 +270,9 @@ def line_clear(grid: Grid, clear: dict, a, b, min_clearance: float, cap: float =
         cl = clear.get(c, cap)
         if cl >= min_clearance:
             reached_min = True
-        elif reached_min or cl < first_cl - 1e-6 or cl < floor_cl:
+        elif reached_min or cl < prev_cl - 1e-6 or cl < floor_cl:
             return False
+        prev_cl = max(prev_cl, cl)
     return True
 
 

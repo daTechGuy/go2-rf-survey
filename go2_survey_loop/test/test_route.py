@@ -202,12 +202,33 @@ class TestOtherCases(unittest.TestCase):
 
     def test_the_robots_own_size_route(self):
         # 2026-11-11's 1.5 x 1.0 m rectangle, chair 0.9 m along its second side:
-        # no room inside to pass at 0.8 m, so round the outside or wait --
+        # no room inside to pass at 0.8 m, so round the outside and finish --
         # never into the ring
         m = route_mission(1.5, 1.0)
         _, log, closest = run(m, ROOM + chair(1.5, 0.9))
         self.assertGreater(closest, BODY.clearance_radius)
-        self.assertIn(m.state, (State.DONE, State.PAUSED))
+        self.assertEqual(m.state, State.DONE, m.reason)
+
+    def test_obstacle_on_corner_rejoins_next_segment(self):
+        # A chair right on the first corner (3.0, 0.0) of a 3 x 2 m rectangle:
+        # wps[0] is inside the chair's clearance, and the next corner (3.0, 2.0)
+        # is behind the chair's shadow when stopped at (2.15, 0.0), so the
+        # detour must rejoin the second leg (3.0, 0.0)->(3.0, 2.0) past the chair.
+        m = route_mission(3.0, 2.0)
+        end, log, closest = run(m, ROOM + chair(3.0, 0.0))
+        self.assertEqual(m.state, State.DONE, m.reason)
+        self.assertGreater(closest, BODY.clearance_radius)
+        self.assertLess(math.hypot(end.x, end.y), FP.reach_tol + 0.1)
+
+    def test_wide_obstacle_escape_allows_lateral_step_at_same_clearance(self):
+        # Stopped ~0.65 m in front of a 1.3 m wide desk across the second leg
+        # (clearance < 0.80): stepping sideways along the desk face keeps the
+        # same ~0.65 m clearance for two cells before climbing above 0.80 m.
+        desk = box(2.35, 0.75, 3.65, 1.25)
+        m = route_mission(3.0, 2.0)
+        end, log, closest = run(m, ROOM + desk)
+        self.assertEqual(m.state, State.DONE, m.reason)
+        self.assertGreater(closest, BODY.clearance_radius)
 
     def test_detour_when_stopped_close_with_blind_spot_under_body(self):
         # Real robot stops ~0.62 m from the obstacle (inside path_clearance=0.80)
@@ -225,3 +246,4 @@ class TestOtherCases(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
