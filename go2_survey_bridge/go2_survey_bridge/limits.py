@@ -65,7 +65,7 @@ class Limits:
 
     max_vx: float = 0.6        # m/s forward/back
     max_vy: float = 0.4        # m/s lateral
-    max_vyaw: float = 0.8      # rad/s
+    max_vyaw: float = 1.0      # rad/s (matches FollowerParams.max_vyaw)
     accel_xy: float = 0.8      # m/s^2
     accel_yaw: float = 1.6     # rad/s^2
 

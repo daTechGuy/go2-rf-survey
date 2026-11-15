@@ -233,25 +233,27 @@ def drop_body(xyz: np.ndarray, pose, front=BODY_FRONT, rear=BODY_REAR,
     return xyz[~drop]
 
 
-def read_bag(uri: Path, cloud_topic: str, odom_topic: str):
-    """Yield ('cloud', xyz, frame_id) and ('odom', (x, y, yaw)) in recorded order."""
+def read_bag(uri: Path, cloud_topic, odom_topic: str):
+    """Yield ('cloud', xyz, frame_id) and ('odom', (x, y, yaw)) in recorded order.
+    ``cloud_topic`` may be a single topic name or an iterable of topic names."""
     import rosbag2_py
     from rclpy.serialization import deserialize_message
     from rosidl_runtime_py.utilities import get_message
 
+    wanted = [cloud_topic] if isinstance(cloud_topic, str) else list(cloud_topic)
     reader = rosbag2_py.SequentialReader()
     reader.open(rosbag2_py.StorageOptions(uri=str(uri), storage_id=_storage_id(uri)),
                 rosbag2_py.ConverterOptions("cdr", "cdr"))
     types = {t.name: t.type for t in reader.get_all_topics_and_types()}
-    if cloud_topic not in types:
-        raise SystemExit(f"{cloud_topic} not in bag; topics: {sorted(types)}")
-    cloud_cls = get_message(types[cloud_topic])
+    cloud_cls = {t: get_message(types[t]) for t in wanted if t in types}
+    if not cloud_cls:
+        raise SystemExit(f"{wanted[0]} not in bag; topics: {sorted(types)}")
     odom_cls = get_message(types[odom_topic]) if odom_topic in types else None
 
     while reader.has_next():
         topic, data, _t = reader.read_next()
-        if topic == cloud_topic:
-            m = deserialize_message(data, cloud_cls)
+        if topic in cloud_cls:
+            m = deserialize_message(data, cloud_cls[topic])
             fields = [(f.name, f.offset, f.datatype) for f in m.fields]
             xyz = cloud_to_xyz(fields, m.point_step, m.data, m.is_bigendian,
                                width=m.width, height=m.height, row_step=m.row_step)
@@ -270,7 +272,9 @@ def main() -> int:
     ap.add_argument("bag", type=Path, help="bag directory from ros2 bag record")
     ap.add_argument("--out", type=Path, default=None,
                     help="output prefix (default: <bag>_map next to the bag)")
-    ap.add_argument("--cloud-topic", default="/utlidar/cloud_deskewed")
+    ap.add_argument("--cloud-topic", action="append", default=None,
+                    help="PointCloud2 topic(s) in odom frame (may be given more than once; "
+                         "default: /utlidar/cloud_deskewed)")
     ap.add_argument("--odom-topic", default="/utlidar/robot_odom")
     ap.add_argument("--voxel", type=float, default=0.05, help="map resolution, m")
     ap.add_argument("--every", type=int, default=1,
@@ -293,7 +297,8 @@ def main() -> int:
     pose = None          # latest odometry (x, y, yaw), to drop the robot from each scan
     dropped = 0
 
-    for item in read_bag(args.bag, args.cloud_topic, args.odom_topic):
+    cloud_topics = args.cloud_topic or ["/utlidar/cloud_deskewed"]
+    for item in read_bag(args.bag, cloud_topics, args.odom_topic):
         if item[0] == "cloud":
             _, xyz, frame = item
             frames.add(frame)

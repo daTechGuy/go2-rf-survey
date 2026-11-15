@@ -124,18 +124,17 @@ class LoopNode(Node):
         # seconds -- behind it included -- is within turn_clearance of centre
         d("turn_clearance", 0.55)
         d("memory_s", 10.0)
+        d("memory_range", 2.5)              # m: turn memory only needs near-field obstacles
         d("body_front", 0.35)
         d("body_rear", 0.40)
         d("body_half_width", 0.20)
-        # 0.13, not 0.10 -- STOPGAP (2026-11-11): walking, the built-in cloud
-        # tilts ~3 deg (floor -0.07 underfoot, +0.03 two metres ahead), so
-        # carpet ahead reached 0.10 and a route refused to turn in open floor.
-        # Replay: 19 ghost points at 0.10, 1 at 0.12. Real fix: a floor plane.
+        # 0.13, not 0.10 -- walking, the built-in cloud tilts ~3 deg (floor
+        # -0.07 underfoot, +0.03 two metres ahead). Combined with floor_plane
+        # below, this prevents carpet returns ahead from reading as obstacles.
         d("obstacle_z_min", 0.13)
         # the floor as a plane fitted to each built-in scan (obstacles.
-        # floor_plane_from_scan) instead of one height: the real fix for the
-        # tilt above. Off until replayed on the 2026-11-11 recordings.
-        d("floor_plane", False)
+        # floor_plane_from_scan) instead of one height: handles gait pitch tilt.
+        d("floor_plane", True)
         d("obstacle_z_max", 1.00)
         d("min_obstacle_points", 5)
         d("odom_timeout_s", 0.5)
@@ -278,7 +277,9 @@ class LoopNode(Node):
         """Turn memory and exploration's map, from either LiDAR."""
         now = self._now()
         obst = obstacle_xy(pts, pose, floor_z, self.obst)
-        self._memory.add(obst, now)
+        fl = floor_xy(pts, pose, floor_z)
+        mem_range = float(self.get_parameter("memory_range").value)
+        self._memory.add(obst, now, pose=pose, max_range=mem_range, floor_xy=fl, p=self.obst)
         if now - self._pruned_t > 1.0:
             self._memory.prune(now)
             self._pruned_t = now
@@ -290,7 +291,7 @@ class LoopNode(Node):
             self._explore_scans += 1
             rays = (ray_points(pts, pose, floor_z, self.obst)
                     if self._explore_scans % 3 == 0 else ())         # CPU: every third scan
-            self.mission.observe(floor_xy(pts, pose, floor_z), obst, (pose.x, pose.y), rays)
+            self.mission.observe(fl, obst, (pose.x, pose.y), rays)
 
     def _ages(self, now: float):
         oa = math.inf if self._pose_t is None else now - self._pose_t

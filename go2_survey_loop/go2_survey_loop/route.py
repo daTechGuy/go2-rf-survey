@@ -125,8 +125,10 @@ class RouteMission:
     def observe(self, floor_xy, obstacle_xy, origin=None, rays=()) -> None:
         """One scan into the grid (loop_node, as for exploring)."""
         self.grid.mark(floor_xy, obstacle_xy)
-        if origin is not None and rays:
-            self.grid.mark_rays(origin, rays, self.p.lidar_h, (self.body.z_min, self.body.z_max))
+        if origin is not None:
+            self.grid.mark_footprint(origin, self.body.body_rear)
+            if rays:
+                self.grid.mark_rays(origin, rays, self.p.lidar_h, (self.body.z_min, self.body.z_max))
         self.observations += 1
 
     # ----------------------------------------------------------------- plan
@@ -138,7 +140,9 @@ class RouteMission:
         goal = g.cell_of(*target)
         if goal is None:
             return None
-        near = [c for c in cost if max(abs(c[0] - goal[0]), abs(c[1] - goal[1])) <= 1]
+        near = [c for c in cost
+                if max(abs(c[0] - goal[0]), abs(c[1] - goal[1])) <= 1
+                and clear.get(c, 3.0) >= p.path_clearance]
         if not near:
             return None
         best = min(near, key=cost.get)
@@ -159,7 +163,8 @@ class RouteMission:
         if here is None:
             return None
         clear = g.clearance()
-        cost, parent = coverage.costs_from(g, here, clear, self.p.path_clearance)
+        cost, parent = coverage.costs_from(
+            g, here, clear, self.p.path_clearance, hard_min=self.body.clearance_radius)
         return cost, parent, clear
 
     def plan_detour(self, pose: Pose2D):
@@ -240,10 +245,12 @@ class RouteMission:
              cloud_age: float, front: int, near: int, turn_near: int = 0) -> Command:
         fresh = pose is not None and odom_age <= self.safety.odom_timeout_s \
             and cloud_age <= self.safety.cloud_timeout_s
+        k = self.safety.min_obstacle_points
+        if fresh and self.observations > 0 and near < k:
+            self.grid.mark_footprint((pose.x, pose.y), self.body.body_rear)
         if self._detour is not None and fresh and self.route.state == State.RUNNING:
             self._recheck(now, pose)
         cmd = self.route.step(now, pose, odom_age, cloud_age, front, near, turn_near)
-        k = self.safety.min_obstacle_points
         if not (self.p.enabled and cmd.state == State.PAUSED
                 and self.route.reason.startswith("obstacle")):
             if cmd.state != State.PAUSED:

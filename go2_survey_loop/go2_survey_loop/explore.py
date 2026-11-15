@@ -223,8 +223,10 @@ class ExploreMission:
         (where the robot stood) to mark the floor they crossed. loop_node
         calls this for every scan while exploring (rays on every third)."""
         self.grid.mark(floor_xy, obstacle_xy)
-        if origin is not None and rays:
-            self.grid.mark_rays(origin, rays, self.p.lidar_h, (self.body.z_min, self.body.z_max))
+        if origin is not None:
+            self.grid.mark_footprint(origin, self.body.body_rear)
+            if rays:
+                self.grid.mark_rays(origin, rays, self.p.lidar_h, (self.body.z_min, self.body.z_max))
         self.observations += 1
 
     def _frontier_leg(self, pose: Pose2D):
@@ -235,7 +237,8 @@ class ExploreMission:
         if here is None:
             return None
         clear = g.clearance()
-        cost, parent = coverage.costs_from(g, here, clear, p.path_clearance)
+        cost, parent = coverage.costs_from(
+            g, here, clear, p.path_clearance, hard_min=self.body.clearance_radius)
         # where it may stop: reachable, with room to turn round
         stands = [c for c in cost if clear.get(c, 3.0) >= p.end_clearance]
         view = p.view_dist / g.cell
@@ -276,7 +279,8 @@ class ExploreMission:
         if here is None or home is None:
             return None
         clear = g.clearance()
-        cost, parent = coverage.costs_from(g, here, clear, p.path_clearance)
+        cost, parent = coverage.costs_from(
+            g, here, clear, p.path_clearance, hard_min=self.body.clearance_radius)
         # the start cell may sit closer to things than path_clearance: any cell
         # within reach tolerance of it will do
         near = [c for c in cost if math.hypot(c[0] - home[0], c[1] - home[1]) * g.cell

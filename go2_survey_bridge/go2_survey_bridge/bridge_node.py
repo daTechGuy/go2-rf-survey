@@ -55,7 +55,7 @@ class CmdVelBridge(Node):
 
         self.declare_parameter("max_vx", 0.6)
         self.declare_parameter("max_vy", 0.4)
-        self.declare_parameter("max_vyaw", 0.8)
+        self.declare_parameter("max_vyaw", 1.0)
         self.declare_parameter("accel_xy", 0.8)
         self.declare_parameter("accel_yaw", 1.6)
         self.declare_parameter("cmd_timeout_s", 0.3)

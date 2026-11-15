@@ -197,6 +197,34 @@ class TestGrid(unittest.TestCase):
         self.assertEqual(out[0], (2.0, 0.0))
         self.assertAlmostEqual(out[-1][1], 1.0)
 
+    def test_mark_footprint_and_stale_occ_recovery(self):
+        g = Grid(0, 0, 3.0, 0.25)
+        g.mark_footprint((0.0, 0.0), radius=0.35)
+        self.assertEqual(g.state(g.cell_of(0.0, 0.0)), FREE)
+        self.assertEqual(g.state(g.cell_of(-0.25, 0.0)), FREE)
+        # 2 stray phantom obstacle hits mark a cell OCC initially...
+        c = g.cell_of(1.5, 0.0)
+        g.mark(obstacle_xy=[(1.5, 0.0)] * 2)
+        self.assertEqual(g.state(c), OCC)
+        # ...but overwhelming floor evidence (>= 8x free hits) recovers it to FREE
+        g.mark(floor_xy=[(1.5, 0.0)] * 16)
+        self.assertEqual(g.state(c), FREE)
+
+    def test_costs_from_escapes_sub_clearance_start(self):
+        g = Grid(0, 0, 3.0, 0.25)
+        g.mark(floor_xy=[(x / 10, y / 10) for x in range(-20, 21) for y in range(-20, 21)])
+        # Obstacle at (0.65, 0.0): start (0, 0) and its immediate side neighbours
+        # are < 0.80 m from it, but >= 0.55 m.
+        g.mark(obstacle_xy=[(0.65, 0.0)] * 4)
+        clear = g.clearance()
+        here = g.cell_of(0.0, 0.0)
+        goal = g.cell_of(0.0, 1.5)
+        self.assertLess(clear[here], 0.80)
+        cost, parent = coverage.costs_from(g, here, clear, 0.80)
+        self.assertIn(goal, cost)
+        wps = coverage.simplify(g, clear, coverage.path_to(parent, goal), 0.80)
+        self.assertTrue(all(clear.get(g.cell_of(x, y), 3.0) >= 0.80 for x, y in wps))
+
 
 class TestFrontierClosedLoop(unittest.TestCase):
     """In the hall: deeper than greedy, home by a short way, never close."""

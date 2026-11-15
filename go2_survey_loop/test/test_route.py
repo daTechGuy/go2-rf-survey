@@ -209,6 +209,19 @@ class TestOtherCases(unittest.TestCase):
         self.assertGreater(closest, BODY.clearance_radius)
         self.assertIn(m.state, (State.DONE, State.PAUSED))
 
+    def test_detour_when_stopped_close_with_blind_spot_under_body(self):
+        # Real robot stops ~0.62 m from the obstacle (inside path_clearance=0.80)
+        # and the head LiDAR never gets floor returns inside the body box.
+        m = route_mission()
+        pose = Pose2D(3.0, 0.13, math.pi / 2)   # 0.62 m short of chair(3.0, 1.0)
+        floor, hits = Lidar(ROOM + chair(3.0, 1.0)).scan(pose)
+        # Drop floor returns within 0.8 m of the robot to mimic the head LiDAR blind spot
+        floor = [(x, y) for x, y in floor if math.hypot(x - pose.x, y - pose.y) > 0.8]
+        m.observe(floor, hits, origin=(pose.x, pose.y))
+        m.route.index = 1
+        plan = m.plan_detour(pose)
+        self.assertIsNotNone(plan, "failed to plan detour from 0.62 m with blind spot underfoot")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

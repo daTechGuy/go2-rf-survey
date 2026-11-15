@@ -227,7 +227,7 @@ if [ "$EXPLORE" = 1 ]; then
   LOOP_ARGS="$LOOP_ARGS -p explore_leg_max:=$(printf %.2f "$LEG_MAX")"
   LOOP_ARGS="$LOOP_ARGS -p explore_strategy:=$STRATEGY"
   LOOP_ARGS="$LOOP_ARGS -p clearance_radius:=0.70 -p stop_distance:=0.70 -p lane_half_width:=0.45"
-  LOOP_ARGS="$LOOP_ARGS -p turn_clearance:=0.70"
+  LOOP_ARGS="$LOOP_ARGS -p turn_clearance:=0.55"
 else
   LOOP_ARGS="-p shape:=$SHAPE -p length:=$LENGTH -p dry_run:=$DRY"
   [ -n "$WIDTH" ] && LOOP_ARGS="$LOOP_ARGS -p width:=$WIDTH -p turn:=$TURN"
@@ -310,7 +310,11 @@ fi
 
 if [ "$MAP" = 1 ]; then
   echo "== floorplan"
-  IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" python3 /workspace/tools/bag_to_map.py "/surveys/$BAG" \
+  MAP_ARGS=("/surveys/$BAG")
+  if [ "$MID360" = 1 ]; then
+    MAP_ARGS+=(--cloud-topic /utlidar/cloud_deskewed --cloud-topic /mid360/cloud_odom)
+  fi
+  IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" python3 /workspace/tools/bag_to_map.py "${MAP_ARGS[@]}" \
     2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2|^\s+[0-9]+ scans read'
   echo "   on the laptop:  scp go2:surveys/${BAG}_map-topdown.png ."
 fi

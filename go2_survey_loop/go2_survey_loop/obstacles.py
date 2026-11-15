@@ -102,10 +102,39 @@ class ObstacleMemory:
         self.keep_s, self.cell = keep_s, cell
         self._cells: dict = {}
 
-    def add(self, points_xy, now: float) -> None:
+    def add(self, points_xy, now: float, pose: Pose2D | None = None,
+            max_range: float | None = None, floor_xy=(),
+            p: ObstacleParams = ObstacleParams()) -> None:
         c = self.cell
+        r2 = max_range * max_range if (pose is not None and max_range is not None) else None
+        cur = set()
         for x, y in points_xy:
-            self._cells[(round(x / c), round(y / c))] = (x, y, now)
+            if r2 is not None and (x - pose.x) ** 2 + (y - pose.y) ** 2 > r2:
+                continue
+            k = (round(x / c), round(y / c))
+            self._cells[k] = (x, y, now)
+            cur.add(k)
+        if floor_xy:
+            fr2 = 2.5 * 2.5
+            for x, y in floor_xy:
+                if pose is not None and (x - pose.x) ** 2 + (y - pose.y) ** 2 > fr2:
+                    continue
+                k = (round(x / c), round(y / c))
+                if k not in cur:
+                    self._cells.pop(k, None)
+        if pose is not None:
+            self.clear_footprint(pose, p)
+
+    def clear_footprint(self, pose: Pose2D, p: ObstacleParams = ObstacleParams()) -> None:
+        """Drop any remembered cell now inside the robot's own body box."""
+        if not self._cells:
+            return
+        co, si = math.cos(pose.yaw), math.sin(pose.yaw)
+        self._cells = {
+            k: v for k, v in self._cells.items()
+            if not (-p.body_rear <= co * (v[0] - pose.x) + si * (v[1] - pose.y) <= p.body_front
+                    and abs(-si * (v[0] - pose.x) + co * (v[1] - pose.y)) <= p.body_half_width)
+        }
 
     def prune(self, now: float) -> None:
         old = now - self.keep_s
@@ -285,8 +314,9 @@ def floor_plane_from_scan(points, pose: Pose2D, radius: float = 3.0, near: float
     rel = [(x - pose.x, y - pose.y, z) for x, y, z in points
            if (x - pose.x) ** 2 + (y - pose.y) ** 2 <= r2]
     a, b, c = f0, 0.0, 0.0
-    for _ in range(iterations):
-        sel = [p for p in rel if abs(p[2] - (a + b * p[0] + c * p[1])) <= band]
+    for it in range(iterations):
+        w = band * 2.0 if it == 0 else band
+        sel = [p for p in rel if abs(p[2] - (a + b * p[0] + c * p[1])) <= w]
         if len(sel) < min_points:
             break
         fit = _fit_plane(sel)

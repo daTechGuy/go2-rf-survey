@@ -68,6 +68,8 @@ def main() -> int:
             rclpy.spin_once(n, timeout_sec=0.01)
 
     try:
+        rpc = UnitreeRpc(n)
+        rpc.prepare("motion_switcher", "obstacles_avoid")
         spin(1.5)                                   # discovery
         for k in counts:
             counts[k] = 0
@@ -83,7 +85,6 @@ def main() -> int:
             snap.update(sport_mode=int(s.mode), gait_type=int(s.gait_type),
                         error_code=int(s.error_code), body_height=float(s.body_height))
 
-        rpc = UnitreeRpc(n)
         mode = check_mode(rpc)
         snap["mode_name"] = None if mode is None or mode[0].startswith("error") else mode[0]
         r = rpc.call("obstacles_avoid", 1002)        # SwitchGet, read-only

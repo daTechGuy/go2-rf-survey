@@ -101,6 +101,21 @@ class TestMemory(unittest.TestCase):
             mem.add(obstacle_xy(legs, pose, FLOOR, P), now=0.1 * i)
         self.assertEqual(ring_count(mem.points(), Pose2D(1.9, 0.0, 0.0), 0.70, P), 0)
 
+    def test_memory_drops_distant_and_floor_cleared_ghosts(self):
+        mem = ObstacleMemory(keep_s=10.0)
+        # 1) A real obstacle at (-0.6, 0.0) behind the robot, a phantom tilted-floor
+        #    hit at (1.5, 0.0), and a distant hit at (4.0, 0.0) beyond max_range=2.5.
+        mem.add([(-0.6, 0.0), (1.5, 0.0), (4.0, 0.0)], now=0.0,
+                pose=ORIGIN, max_range=2.5)
+        self.assertEqual(len(mem), 2)                                # (4.0, 0.0) ignored
+        # 2) Next scan sees flat floor at (1.5, 0.0) and nothing behind (-0.6, 0.0):
+        #    the phantom at (1.5, 0.0) is cleared, while (-0.6, 0.0) stays remembered.
+        mem.add([], now=1.0, pose=ORIGIN, max_range=2.5, floor_xy=[(1.5, 0.0)])
+        self.assertEqual(mem.points(), [(-0.6, 0.0)])
+        # 3) If the robot stands on a remembered point, clear_footprint removes it.
+        mem.add([(0.2, 0.0)], now=2.0, pose=ORIGIN, max_range=2.5)
+        self.assertEqual(mem.points(), [(-0.6, 0.0)])
+
 
 class TestFilters(unittest.TestCase):
     def test_own_body_ignored(self):

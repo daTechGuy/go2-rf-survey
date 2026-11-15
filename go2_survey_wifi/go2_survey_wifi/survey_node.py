@@ -30,6 +30,8 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 
 import tf2_ros
+from nav_msgs.msg import Odometry
+from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
@@ -77,6 +79,7 @@ class WifiSurveyNode(Node):
         # TF staleness guard. A pose older than this means SLAM has stalled,
         # and a sample pinned to a stale pose is worse than no sample.
         self.declare_parameter("max_tf_age_s", 1.0)
+        self.declare_parameter("odom_topic", "/utlidar/robot_odom")
 
         p = self.get_parameter
         self.interface: str = p("interface").value
@@ -87,9 +90,16 @@ class WifiSurveyNode(Node):
         self.mode: str = p("mode").value
         self.min_move_m: float = p("min_move_m").value
         self.max_tf_age_s: float = p("max_tf_age_s").value
+        self.odom_topic: str = p("odom_topic").value
 
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        self._odom_pose: tuple[float, float, float, float] | None = None
+        self._odom_t: float | None = None
+        if self.odom_topic:
+            self.create_subscription(
+                Odometry, self.odom_topic, self._on_odom, qos_profile_sensor_data
+            )
 
         out = Path(p("output_csv").value).expanduser()
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -131,13 +141,21 @@ class WifiSurveyNode(Node):
 
     # ---------------------------------------------------------------- pose
 
-    def _lookup_pose(self, when) -> tuple[float, float, float, float] | None:
-        """Pose at ``when``, or None if TF cannot supply a usable one.
+    def _on_odom(self, msg: Odometry) -> None:
+        p = msg.pose.pose.position
+        q = msg.pose.pose.orientation
+        self._odom_pose = (p.x, p.y, p.z, yaw_from_quaternion(q.x, q.y, q.z, q.w))
+        self._odom_t = self.get_clock().now().nanoseconds * 1e-9
 
-        Falls back to the latest available transform when the exact stamp is
-        not yet in the buffer, but refuses anything older than max_tf_age_s --
-        a stale pose would silently misplace the sample on the map.
+    def _lookup_pose(self, when) -> tuple[float, float, float, float] | None:
+        """Pose at ``when``, or None if neither TF nor odom_topic can supply a
+        usable one.
+
+        Falls back to the latest available transform (or ``odom_topic`` when
+        running on `/utlidar/robot_odom` without SLAM TF) when the exact stamp
+        is not yet in the buffer, but refuses anything older than max_tf_age_s.
         """
+        now_s = self.get_clock().now().nanoseconds * 1e-9
         try:
             tf = self.tf_buffer.lookup_transform(
                 self.map_frame, self.base_frame, when
@@ -152,6 +170,10 @@ class WifiSurveyNode(Node):
                     self.map_frame, self.base_frame, rclpy.time.Time()
                 )
             except Exception as exc:
+                if self._odom_pose is not None and self._odom_t is not None:
+                    age = now_s - self._odom_t
+                    if age <= self.max_tf_age_s:
+                        return self._odom_pose
                 self.get_logger().warning(
                     f"no {self.map_frame}->{self.base_frame} transform: {exc}"
                 )

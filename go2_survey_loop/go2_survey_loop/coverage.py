@@ -50,11 +50,33 @@ class Grid:
 
     def state(self, c) -> int:
         k = c[0] * self.n + c[1]
-        if self._occ[k] >= 2:
+        occ = self._occ[k]
+        if occ >= 2:
+            if occ < 6 and self._free[k] >= occ * 8:
+                return FREE
             return OCC
         return FREE if self._free[k] else UNKNOWN
 
     # ------------------------------------------------------------- updates
+    def mark_footprint(self, origin, radius: float = 0.35) -> None:
+        """Mark the cells directly under the robot's body as FREE (unless OCC).
+        The head LiDAR's rays and floor returns skip the robot's own body box,
+        which otherwise leaves a trail of UNKNOWN cells right under and behind
+        the robot where detours need to step."""
+        ox, oy = origin
+        n, x0, y0, s = self.n, self.x0, self.y0, self.cell
+        r = max(1, int(math.ceil(radius / s)))
+        ci, cj = int((ox - x0) / s), int((oy - y0) / s)
+        r2 = (radius + 0.5 * s) ** 2
+        for di in range(-r, r + 1):
+            for dj in range(-r, r + 1):
+                i, j = ci + di, cj + dj
+                if 0 <= i < n and 0 <= j < n:
+                    cx, cy = x0 + (i + 0.5) * s, y0 + (j + 0.5) * s
+                    if (cx - ox) ** 2 + (cy - oy) ** 2 <= r2:
+                        k = i * n + j
+                        if self._free[k] < 255:
+                            self._free[k] += 1
     def mark(self, floor_xy=(), obstacle_xy=()) -> None:
         n, x0, y0, s = self.n, self.x0, self.y0, self.cell
         for xs, counts in ((floor_xy, self._free), (obstacle_xy, self._occ)):
@@ -174,10 +196,12 @@ class Grid:
 
 
 def costs_from(grid: Grid, start, clear: dict, min_clearance: float, cap: float = 3.0,
-               near_cost: float = 0.5):
+               near_cost: float = 0.5, hard_min: float = 0.55):
     """Dijkstra from ``start`` over FREE cells with clearance >= min_clearance
-    (the start cell itself is always allowed: the robot is already there).
-    Returns ({cell: cost}, {cell: parent})."""
+    (the start cell itself is always allowed: the robot is already there; if
+    ``start`` sits closer than ``min_clearance`` to an obstacle, it may step
+    through FREE cells that strictly increase clearance above ``hard_min``
+    until reaching ``min_clearance``). Returns ({cell: cost}, {cell: parent})."""
     n, s = grid.n, grid.cell
     cost, parent = {start: 0.0}, {start: None}
     heap = [(0.0, start)]
@@ -185,13 +209,15 @@ def costs_from(grid: Grid, start, clear: dict, min_clearance: float, cap: float 
         d, c = heapq.heappop(heap)
         if d > cost.get(c, math.inf):
             continue
+        c_cl = clear.get(c, cap)
         for di, dj in _N8:
             nb = (c[0] + di, c[1] + dj)
             if not (0 <= nb[0] < n and 0 <= nb[1] < n) or grid.state(nb) != FREE:
                 continue
             cl = clear.get(nb, cap)
             if cl < min_clearance:
-                continue
+                if c_cl >= min_clearance or cl <= c_cl + 1e-6 or cl < min(min_clearance, hard_min):
+                    continue
             step = s * (_SQ2 if di and dj else 1.0)
             nd = d + step * (1.0 + near_cost * max(0.0, 1.5 - cl))   # prefer mid-aisle
             if nd < cost.get(nb, math.inf):
@@ -208,13 +234,24 @@ def path_to(parent: dict, goal):
     return out[::-1]
 
 
-def line_clear(grid: Grid, clear: dict, a, b, min_clearance: float, cap: float = 3.0) -> bool:
+def line_clear(grid: Grid, clear: dict, a, b, min_clearance: float, cap: float = 3.0,
+               hard_min: float = 0.55) -> bool:
     """Every point of the straight segment a -> b (metres) sits in a FREE cell
     with at least ``min_clearance`` (the first cell, where the robot stands,
-    excepted)."""
+    excepted; if ``first`` sits below ``min_clearance``, cells climbing
+    monotonically out of the start zone above ``hard_min`` to ``min_clearance``
+    are allowed)."""
     (ax, ay), (bx, by) = a, b
     steps = max(1, int(math.hypot(bx - ax, by - ay) / (grid.cell * 0.5)))
     first = grid.cell_of(ax, ay)
+    end = grid.cell_of(bx, by)
+    if first is None or end is None:
+        return False
+    prev_cl = clear.get(first, cap)
+    reached_min = prev_cl >= min_clearance
+    if not reached_min and clear.get(end, cap) < min_clearance:
+        return False
+    floor_cl = min(min_clearance, hard_min)
     for k in range(steps + 1):
         x, y = ax + (bx - ax) * k / steps, ay + (by - ay) * k / steps
         c = grid.cell_of(x, y)
@@ -222,8 +259,14 @@ def line_clear(grid: Grid, clear: dict, a, b, min_clearance: float, cap: float =
             return False
         if c == first:
             continue
-        if grid.state(c) != FREE or clear.get(c, cap) < min_clearance:
+        if grid.state(c) != FREE:
             return False
+        cl = clear.get(c, cap)
+        if cl >= min_clearance:
+            reached_min = True
+        elif reached_min or cl < prev_cl - 1e-6 or cl < floor_cl:
+            return False
+        prev_cl = cl
     return True
 
 
@@ -238,6 +281,11 @@ def simplify(grid: Grid, clear: dict, cells, min_clearance: float):
         j = len(pts) - 1
         while j > i + 1 and not line_clear(grid, clear, pts[i], pts[j], min_clearance):
             j -= 1
+        if clear.get(cells[j], 3.0) < min_clearance:
+            for k in range(j + 1, len(pts)):
+                if clear.get(cells[k], 3.0) >= min_clearance:
+                    j = k
+                    break
         out.append(pts[j])
         i = j
     return out
