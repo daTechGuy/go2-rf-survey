@@ -327,6 +327,91 @@ class TestFrontierStart(unittest.TestCase):
         tx, ty = m.leg.waypoints[-1]
         self.assertLess(abs(math.atan2(ty, tx)), m.p.straight_turn + 1e-6)
 
+    def test_truncated_leg_does_not_blacklist_viewpoint_beyond_max_path(self):
+        # Frontier at x = 5.25 -> nearest viewpoint (view_dist = 2.0 m short of
+        # it) sits at ~3.5 m (> max_path = 3.0 m, and within 1.0 m of the 3.0 m
+        # truncation point).
+        m = mission(legs=4, radius=6.0)
+        floor = [(x / 4, y / 4) for x in range(-4, 22) for y in range(-5, 6)]
+        walls = (segment(-1.25, -1.5, 5.5, -1.5)
+                 + segment(-1.25, 1.5, 5.5, 1.5)
+                 + segment(-1.25, -1.5, -1.25, 1.5))
+        for _ in range(12):
+            m.observe(floor, walls)
+        # Step 1: plans a leg from (0, 0) toward ~ (3.5, 0.0), truncated at 3.0 m.
+        cmd = m.step(0.0, Pose2D(0, 0, 0), FRESH, FRESH, 0, 0, walls)
+        self.assertEqual(cmd.state, State.RUNNING)
+        self.assertIsNotNone(m.leg)
+        self.assertTrue(m._leg_truncated)
+        trunc_end = m.leg.waypoints[-1]
+        self.assertAlmostEqual(math.hypot(*trunc_end), m.p.max_path, delta=0.1)
+        # Finish the truncated leg at trunc_end: must NOT add trunc_end to _spent_goals
+        cmd = m.step(10.0, Pose2D(trunc_end[0], trunc_end[1], 0.0), FRESH, FRESH, 0, 0, walls)
+        self.assertEqual(m._spent_goals, [])
+        # Next tick from trunc_end finishes the remaining ~0.5 m to the viewpoint
+        cmd = m.step(10.1, Pose2D(trunc_end[0], trunc_end[1], 0.0), FRESH, FRESH, 0, 0, walls)
+        self.assertIsNotNone(m.leg)
+        self.assertEqual(m.phase, "explore")
+        self.assertGreater(m.leg.waypoints[-1][0], trunc_end[0] + 0.2)
+
+    def test_tight_classroom_aisle_uses_fallback_clearance_tier(self):
+        # 2026-11-11 classroom: 1.75 m aisle (walls/desks at y = +/-0.875 m) is
+        # narrower than 2 * 0.95 = 1.90 m and 2 * 1.10 = 2.20 m, so the wide
+        # tier finds nothing at the start; the fallback tier explores it safely.
+        tight_hall = (
+            box(-1.5, -4.0, 9.0, 4.0)
+            + box(1.5, 0.88, 6.0, 2.0)
+            + box(1.5, -2.0, 6.0, -0.88)
+        )
+        m = mission(legs=6, radius=7.0)
+        end, log, closest = run(m, tight_hall, steps=6000)
+        self.assertEqual(m.state, State.DONE, m.reason)
+        self.assertGreater(max(p.x for _, p, _, _ in log), 3.0)
+        self.assertGreater(closest, 0.60)
+        self.assertLess(math.hypot(end.x, end.y), FP.reach_tol + 0.15)
+
+    def test_frontier_patch_visible_when_nearest_edge_cell_is_occluded(self):
+        m = mission(legs=4, radius=6.0)
+        # Seen floor x = -1..3, y = -1.5..1.5, with a small pillar at (1.5, 0.5)
+        # that blocks line-of-sight from x <= 1.0 to the nearest frontier cell at
+        # (2.8, 0.6), while the rest of the frontier patch at y = -0.5..-1.2 is
+        # in plain sight.
+        floor = [(x / 4, y / 4) for x in range(-4, 12) for y in range(-6, 4)]
+        walls = (segment(-1.25, -1.75, 3.5, -1.75)
+                 + segment(-1.25, 1.25, 3.5, 1.25)
+                 + segment(-1.25, -1.75, -1.25, 1.25)
+                 + [(1.5, 0.5), (1.5, 0.75), (1.75, 0.5)])
+        for _ in range(12):
+            m.observe(floor, walls)
+        wps = m._frontier_leg(Pose2D(0.0, 0.25, 0.0))
+        self.assertIsNotNone(wps)
+
+    def test_home_path_replans_around_new_obstacle(self):
+        m = mission(legs=1, radius=6.0)
+        room = box(-1.5, -3.0, 6.0, 3.0)
+        floor = [(x / 4, y / 4) for x in range(-5, 22) for y in range(-10, 11)]
+        for _ in range(12):
+            m.observe(floor, room)
+        # Put the mission into the home phase from (3.5, 0.0) back to (0.0, 0.0)
+        pose = Pose2D(3.5, 0.0, math.pi)
+        m.legs_done = 1
+        m.leg_starts = [(0.0, 0.0)]
+        m._go_home(pose, 10.0)
+        self.assertEqual(m.phase, "home")
+        self.assertEqual(m.leg.waypoints, [(0.0, 0.0)])
+        # Now a chair is discovered at (1.75, 0.0) blocking the direct line home
+        chair = box(1.5, -0.25, 2.0, 0.25)
+        for _ in range(4):
+            m.observe([], chair)
+        # Blocked ahead at t = 11.0 (more than home_skip_m from (0, 0)):
+        cmd = m.step(11.0, pose, FRESH, FRESH, 10, 0, room + chair)
+        self.assertEqual(cmd.state, State.PAUSED)
+        # After replan_hold_s (1.0 s), it re-plans _home_path around the chair
+        cmd = m.step(12.1, pose, FRESH, FRESH, 10, 0, room + chair)
+        self.assertEqual(cmd.state, State.RUNNING, cmd.reason)
+        self.assertIn("choosing another way", cmd.reason)
+        self.assertGreater(len(m.leg.waypoints), 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

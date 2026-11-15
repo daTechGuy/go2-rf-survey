@@ -325,10 +325,13 @@ class TestNoRoomToTurn(unittest.TestCase):
         pose = Pose2D(0, 0, math.pi)                   # facing the near wall
         m.step(0.0, pose, FRESH, FRESH, 0, 0, ROOM, turn_near=0)
         self.assertIsNotNone(m.leg)
-        # then the memory fills behind it: the turn must not happen
+        self.assertEqual(len(m.leg_starts), 1)
+        # then the memory fills behind it: the turn must not happen, and the
+        # unwalked start point is popped from leg_starts
         cmd = m.step(0.1, pose, FRESH, FRESH, 0, 0, ROOM, turn_near=20)
         self.assertEqual((cmd.vx, cmd.vyaw), (0.0, 0.0))
         self.assertIn("no room to turn", cmd.reason)
+        self.assertEqual(m.leg_starts, [])
 
 
 class TestLimits(unittest.TestCase):

@@ -201,6 +201,10 @@ class ExploreMission:
         self.grid = coverage.Grid(start.x, start.y, explore.radius + 1.5, explore.grid_cell)
         self.observations = 0
         self._spent_goals: list = []   # goals reached or blocked short of: not again
+        self._blocked_goals: set = set()
+        self._leg_goal: tuple | None = None
+        self._leg_truncated: bool = False
+        self._leg_clearance: float = explore.path_clearance
         self._near_since: float | None = None
 
     def _stuck(self, now: float, near: int) -> bool:
@@ -229,30 +233,45 @@ class ExploreMission:
                 self.grid.mark_rays(origin, rays, self.p.lidar_h, (self.body.z_min, self.body.z_max))
         self.observations += 1
 
-    def _frontier_leg(self, pose: Pose2D):
-        """Waypoints to the most worthwhile reachable patch of unseen edge,
-        cut to max_path, or None if there is none."""
+    def _tight_clearances(self) -> tuple[float, float]:
+        """Fallback (path_clearance, end_clearance) for furnished classrooms
+        whose aisles are narrower than the wide 0.95 / 1.10 m tier (4-5 grid
+        cells per side) but still have 3 grid cells (0.75 m >= 0.70 m ring) to
+        walk through and 0.85 m to stop and turn."""
+        p = self.p
+        path_cl = min(p.path_clearance, max(self.body.clearance_radius + 0.05, 0.75))
+        end_cl = min(p.end_clearance, max(self.body.clearance_radius + 0.15, 0.85))
+        return path_cl, end_cl
+
+    def _frontier_leg_at(self, pose: Pose2D, clear: dict, patches: list,
+                         path_cl: float, end_cl: float):
+        """Best frontier leg at ``(path_cl, end_cl)``, or None."""
         p, g = self.p, self.grid
         here = g.cell_of(pose.x, pose.y)
         if here is None:
             return None
-        clear = g.clearance()
         cost, parent = coverage.costs_from(
-            g, here, clear, p.path_clearance, hard_min=self.body.clearance_radius)
+            g, here, clear, path_cl, hard_min=self.body.clearance_radius)
         # where it may stop: reachable, with room to turn round
-        stands = [c for c in cost if clear.get(c, 3.0) >= p.end_clearance]
+        stands = [c for c in cost if clear.get(c, 3.0) >= end_cl]
+        if not stands:
+            return None
         view = p.view_dist / g.cell
         best = None
-        for patch in g.frontiers(p.frontier_min_cells):
-            # its nearest edge: a big patch's middle can be far from anywhere
-            # it could stand (sim hall)
-            mid = min(patch, key=lambda c: (c[0] - here[0]) ** 2 + (c[1] - here[1]) ** 2)
-            # the cheapest place to stand that can actually see into it
+        for patch in patches:
+            # Check the nearest edge cell first (a big patch's middle can be
+            # far from anywhere it could stand); if an obstacle corner hides
+            # that single cell, try the middle and far end of the patch too.
+            by_dist = sorted(patch, key=lambda c: (c[0] - here[0]) ** 2 + (c[1] - here[1]) ** 2)
+            samples = [by_dist[0], by_dist[len(by_dist) // 2], by_dist[-1]]
             goal = None
-            for c in sorted((c for c in stands if math.hypot(c[0] - mid[0], c[1] - mid[1]) <= view),
-                            key=cost.get):
-                if coverage.sees(g, c, mid):
-                    goal = c
+            for mid in dict.fromkeys(samples):
+                for c in sorted((c for c in stands if math.hypot(c[0] - mid[0], c[1] - mid[1]) <= view),
+                                key=cost.get):
+                    if coverage.sees(g, c, mid):
+                        goal = c
+                        break
+                if goal is not None:
                     break
             if goal is None:
                 continue
@@ -268,9 +287,37 @@ class ExploreMission:
                 best = (score, goal)
         if best is None:
             return None
-        wps = coverage.simplify(g, clear, coverage.path_to(parent, best[1]), p.path_clearance)
-        wps = coverage.truncate(wps, (pose.x, pose.y), p.max_path)
-        return wps or None
+        raw_wps = coverage.simplify(
+            g, clear, coverage.path_to(parent, best[1]), path_cl,
+            hard_min=self.body.clearance_radius)
+        wps = coverage.truncate(raw_wps, (pose.x, pose.y), p.max_path)
+        if not wps:
+            return None
+        self._leg_goal = g.centre(best[1])
+        self._leg_truncated = bool(raw_wps and wps[-1] != raw_wps[-1])
+        self._leg_clearance = path_cl
+        return wps
+
+    def _frontier_leg(self, pose: Pose2D):
+        """Waypoints to the most worthwhile reachable patch of unseen edge,
+        cut to max_path, or None if there is none."""
+        p, g = self.p, self.grid
+        if g.cell_of(pose.x, pose.y) is None:
+            return None
+        patches = g.frontiers(p.frontier_min_cells)
+        if not patches:
+            return None
+        clear = g.clearance()
+        wps = self._frontier_leg_at(pose, clear, patches, p.path_clearance, p.end_clearance)
+        if wps:
+            return wps
+        # In a furnished classroom (2026-11-11) desk aisles are often 1.6-1.8 m
+        # wide (< 2 * 0.95 m), so the wide tier finds nothing even before the
+        # first step. Fall back to the tighter tier before giving up.
+        tight_path, tight_end = self._tight_clearances()
+        if (tight_path, tight_end) != (p.path_clearance, p.end_clearance):
+            return self._frontier_leg_at(pose, clear, patches, tight_path, tight_end)
+        return None
 
     def _home_path(self, pose: Pose2D):
         """Shortest clear path home over seen floor, or None."""
@@ -279,17 +326,25 @@ class ExploreMission:
         if here is None or home is None:
             return None
         clear = g.clearance()
-        cost, parent = coverage.costs_from(
-            g, here, clear, p.path_clearance, hard_min=self.body.clearance_radius)
-        # the start cell may sit closer to things than path_clearance: any cell
-        # within reach tolerance of it will do
-        near = [c for c in cost if math.hypot(c[0] - home[0], c[1] - home[1]) * g.cell
-                <= max(self.follow.reach_tol, g.cell)]
-        if not near:
-            return None
-        goal = min(near, key=cost.get)
-        wps = coverage.simplify(g, clear, coverage.path_to(parent, goal), p.path_clearance)
-        return (wps[:-1] if wps else []) + [(self.start.x, self.start.y)]
+        tight_path, _ = self._tight_clearances()
+        tiers = [p.path_clearance]
+        if tight_path < p.path_clearance:
+            tiers.append(tight_path)
+        for path_cl in tiers:
+            cost, parent = coverage.costs_from(
+                g, here, clear, path_cl, hard_min=self.body.clearance_radius)
+            # the start cell may sit closer to things than path_clearance: any cell
+            # within reach tolerance of it will do
+            near = [c for c in cost if math.hypot(c[0] - home[0], c[1] - home[1]) * g.cell
+                    <= max(self.follow.reach_tol, g.cell)]
+            if near:
+                goal = min(near, key=cost.get)
+                wps = coverage.simplify(
+                    g, clear, coverage.path_to(parent, goal), path_cl,
+                    hard_min=self.body.clearance_radius)
+                self._leg_clearance = path_cl
+                return (wps[:-1] if wps else []) + [(self.start.x, self.start.y)]
+        return None
 
     # ------------------------------------------------------------- queries
 
@@ -334,6 +389,7 @@ class ExploreMission:
 
     def _go_home(self, pose: Pose2D, now: float) -> None:
         self.phase = "home"
+        self._leg_goal, self._leg_truncated = (self.start.x, self.start.y), False
         wps = self._home_path(pose) if self.p.strategy == "frontier" else None
         if not wps:                     # no clear path on the map: retrace the legs
             wps = list(reversed(self.leg_starts)) or [(self.start.x, self.start.y)]
@@ -403,6 +459,8 @@ class ExploreMission:
                     return self._hold("no room to turn here and nothing open straight "
                                       "ahead -- move me, or resume", latch=True)
                 if leg is not None:
+                    self._leg_goal = leg.target
+                    self._leg_truncated = False
                     self.leg_starts.append((pose.x, pose.y))
                     self.leg = Mission([leg.target], pose, now, self.follow,
                                        self._leg_safety())
@@ -426,7 +484,8 @@ class ExploreMission:
         if cmd.state == State.DONE:
             if self.phase == "home":
                 return self._end(State.DONE, f"explored {self.legs_done} legs, home", now)
-            self._spent_goals.append(self.leg.waypoints[-1])     # stood there: not again
+            if not self._leg_truncated:
+                self._spent_goals.append(self.leg.waypoints[-1])     # stood there: not again
             self.legs_done += 1
             self.leg, self._hold_since = None, None
             return Command(0.0, 0.0, True, State.RUNNING, self.progress())
@@ -438,6 +497,10 @@ class ExploreMission:
             if self.phase == "explore" and cmd.reason.startswith("no room to turn"):
                 # this leg needed a turn on the spot it can't make here: drop
                 # it; the next plan only looks roughly straight ahead
+                if (pose is not None and self.leg_starts
+                        and math.hypot(pose.x - self.leg_starts[-1][0],
+                                       pose.y - self.leg_starts[-1][1]) <= self.follow.reach_tol):
+                    self.leg_starts.pop()
                 self.legs_done += 1
                 self.leg, self._hold_since = None, None
                 self.state = State.RUNNING
@@ -449,7 +512,18 @@ class ExploreMission:
                     self._hold_since = now
                 if now - self._hold_since >= self.p.replan_hold_s \
                         and near < s.min_obstacle_points:
-                    self._spent_goals.append(self.leg.waypoints[-1])   # blocked short of it: not again
+                    goal_pt = self._leg_goal or self.leg.waypoints[-1]
+                    grid_saw_block = (
+                        self.p.strategy == "frontier" and pose is not None
+                        and not coverage.line_clear(
+                            self.grid, self.grid.clearance(),
+                            (pose.x, pose.y), self.leg.target,
+                            self._leg_clearance, hard_min=self.body.clearance_radius))
+                    if not grid_saw_block or goal_pt in self._blocked_goals:
+                        self._spent_goals.append(goal_pt)
+                        self._spent_goals.append(self.leg.waypoints[-1])
+                    else:
+                        self._blocked_goals.add(goal_pt)
                     self.legs_done += 1
                     self.leg, self._hold_since = None, None
                     self.state = State.RUNNING
@@ -472,6 +546,32 @@ class ExploreMission:
                     self.state = State.RUNNING
                     return Command(0.0, 0.0, True, State.RUNNING,
                                    f"home: turn point next to an obstacle, skipped ({self.progress()})")
+                if self.p.strategy == "frontier" and turn_near < s.min_obstacle_points:
+                    # If the coverage grid now sees the obstacle blocking the
+                    # planned segment home, stand for replan_hold_s and re-plan
+                    # around it instead of latching a permanent pause.
+                    grid_saw_block = not coverage.line_clear(
+                        self.grid, self.grid.clearance(),
+                        (pose.x, pose.y), self.leg.target,
+                        self._leg_clearance, hard_min=self.body.clearance_radius)
+                    if grid_saw_block:
+                        if self._hold_since is None:
+                            self._hold_since = now
+                        if (now - self._hold_since >= self.p.replan_hold_s
+                                and near < s.min_obstacle_points):
+                            wps = self._home_path(pose)
+                            if wps and wps != self.leg.waypoints[self.leg.index:]:
+                                self.leg = Mission(wps, pose, now, self.follow, self._leg_safety())
+                                self._hold_since = None
+                                self.state = State.RUNNING
+                                return Command(
+                                    0.0, 0.0, True, State.RUNNING,
+                                    f"home: blocked -- choosing another way ({self.progress()})")
+                        if self._stuck(now, near):
+                            return self._end(
+                                State.ABORTED,
+                                f"stuck: something within the clearance ring for {self.p.stuck_s:.0f}s",
+                                now)
             # stale sensors, or blocked on the way home: the leg holds its own
             # pause (operator resume, or its auto-resume); mirror it
             self.state, self.reason = State.PAUSED, cmd.reason

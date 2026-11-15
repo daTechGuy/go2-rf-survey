@@ -114,10 +114,16 @@ and advances waypoints on line-crossing so `pathFollower`'s 0.75 m slow-down /
 on stop/pause/abort), `tools/cmu_ctl.py` (`go2loop.sh cmu-check | cmu-stop | cmu-goal`:
 accepts Point-LIO's `camera_init` frame and checks `autonomyMode` / `maxSpeed` /
 `/joy` / subscribers), `remote_trigger.py` (direct `/stop 15` + `StopMove` on
-remote abort), and `demo.sh --cmu` (fake-robot scenario 21). Also fixed: `heatmap.py`
-8-connected octile geodesic reach mask over `FREE` cells (no wall bleed into
-unvisited rooms), `coverage.py` `simplify`/`line_clear` when escaping a
-sub-clearance start cell around a corner, `go2_avoid.py` migrated to
+remote abort), and `demo.sh --cmu` (fake-robot scenario 21). Also fixed: `route.py` detours
+(hysteresis against flickering edge obstacles, local window expansion for wide
+obstacles, corner-inside-obstacle skip, mid-detour re-check against newly seen
+obstacles), `explore.py` frontier exploration (two-tier clearance fallback so
+1.6-1.8 m classroom aisles don't quit at the start, multi-cell patch visibility
+check past obstacle corners, no false `_spent_goals` blacklisting on 3 m
+truncated legs, and home-path re-planning around newly mapped obstacles),
+`heatmap.py` 8-connected octile geodesic reach mask over `FREE` cells (no wall
+bleed into unvisited rooms), `coverage.py` `simplify`/`line_clear` when
+escaping a sub-clearance start cell around a corner, `go2_avoid.py` migrated to
 `UnitreeRpc`, `preflight.sh` + `get_results.py` WiFi hotspot (`go2w`) support,
 and `run_report.py` detour counter.
 
@@ -159,7 +165,7 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
 
 - **Pure functions for anything that can be wrong quietly.** `iw` parsing,
   velocity limiting, the watchdog, and the FOV maths are all ROS-free and
-  clock-free so they can be tested without hardware. 470 tests across 27 suites
+  clock-free so they can be tested without hardware. 476 tests across 27 suites
   run on a bare Python. Keep it that way — if new logic can be made testable,
   make it.
 - **Tests before hardware.** `python tools/run_tests.py` must stay green and

@@ -214,6 +214,8 @@ def step_cmu(mission: Mission | RouteMission | ExploreMission,
                 and near < mission.safety.min_obstacle_points
                 and mission.leg is not None):
             mission._spent_goals.append(mission.leg.waypoints[-1])
+            if getattr(mission, "_leg_goal", None) is not None:
+                mission._spent_goals.append(mission._leg_goal)
             mission.legs_done += 1
             mission.leg = None
             mission._hold_since = None
