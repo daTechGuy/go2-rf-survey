@@ -42,12 +42,12 @@ and the user's go.
   (`stopYawRateGain` 1.5 x heading error) and slows near goals: it may
   stall turning on the spot or just short of a goal. Watch for it; tune
   `stopYawRateGain` / a minimum turn rate if so.
-- A way to stop it from our side: publish `/stop 15`, then `StopMove`
-  (`go2loop.sh bridge`'s path, or a one-shot request). The remote's
-  **L2+B** works regardless.
+- A way to stop it from our side: `bash ~/go2-rf-survey/tools/go2loop.sh cmu-stop`
+  publishes `/stop 15` (`std_msgs/Int8`) and `StopMove` (`api_id: 1003`)
+  directly on `/api/sport/request`. The remote's **L2+B** works regardless.
 - Unknown: whether the Go2 keeps walking on the last `Move` if the stack
-  dies mid-command. Until that is known, stop it with `/stop 15` first and
-  only then kill the launch.
+  dies mid-command. Until that is known, stop it with `go2loop.sh cmu-stop`
+  first and only then kill the launch.
 
 ## Session plan
 
@@ -68,16 +68,30 @@ Each step says whether the robot moves. Ask before every one that does.
 
 **S1 — sensing only (nothing moves).** Launch with `is_real_robot:=false`
 (pathFollower then only publishes `/cmd_vel`, never `/api/sport/request`):
-check `/state_estimation`, `/terrain_map`, `/path` rates; drive the robot by
-remote and see SLAM keep up; put a goal on `/way_point` and watch `/path`
-bend round the chair. Wait out the 10–20 s startup delay the README warns of.
+wait out the 10–20 s startup delay the README warns of, then run
+`bash ~/go2-rf-survey/tools/go2loop.sh cmu-check` to check `/state_estimation`,
+`/registered_scan`, `/terrain_map`, `/path` rates and `/way_point` + `/stop`
+subscribers; drive the robot by remote and see SLAM keep up; send a test goal
+with `bash ~/go2-rf-survey/tools/go2loop.sh cmu-goal 2.0 0.0` and watch `/path`
+bend round the chair.
 
 **S2 — IMU calibration (MOVES: 20 s spin).**
 
 **S3 — first autonomous goal (MOVES).** Chair 1.5 m ahead, one waypoint
-3 m ahead behind it, 0.3 m/s, `/stop 15` and L2+B ready. It should curve
-round the chair without stopping.
+3 m ahead behind it (`bash ~/go2-rf-survey/tools/go2loop.sh cmu-goal 3.0 0.0`
+sets `/stop 0` and publishes `/way_point`), 0.3 m/s,
+`bash ~/go2-rf-survey/tools/go2loop.sh cmu-stop` and L2+B ready. It should
+curve round the chair without stopping. Record a Stage 1 pass for the `cmu`
+backend once verified:
+`python3 ~/go2-rf-survey/tools/stage_gate.py record 1 --backend cmu`.
 
-**S4 — wire in ours.** Routes → successive `/way_point`s; exploration's
-next goal → `/way_point`; the remote's abort combos → `/stop 15` +
-`StopMove`; recordings and floorplans as now.
+**S4 — wire in ours.** Built and tested offline (`loop_node.py -p planner:=cmu`,
+`demo.sh --cmu`): routes → successive `/way_point`s; exploration's next goal →
+`/way_point` (re-planning if CMU stalls at a front obstacle); body clearance
+ring (`near < 0.25 m`), geofence, sensor staleness, and the remote's abort
+combos → `/stop 15` + `StopMove`; `go2bridge` is skipped so only CMU's
+`pathFollower` drives `/api/sport/request`; recordings and floorplans as now:
+```bash
+bash ~/go2-rf-survey/tools/demo.sh --cmu --length 1.0 --rehearse
+bash ~/go2-rf-survey/tools/demo.sh --cmu --length 1.0 --i-confirm-breathing --remote-start --detach
+```

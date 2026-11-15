@@ -21,12 +21,17 @@ src_sha() { cat docker/Dockerfile docker/entrypoint.sh | sha256sum | cut -c1-16;
 
 echo "== network"
 NET=0
-if ip route | grep -q '^default via 192.168.123.222' && \
-   timeout 6 ping -c1 -W4 github.com >/dev/null 2>&1; then
-  echo "OK   internet via the laptop"; NET=1
+if timeout 6 ping -c1 -W4 github.com >/dev/null 2>&1; then
+  gw=$(ip route show default 2>/dev/null | head -1 | awk '{print $3}')
+  echo "OK   internet via the laptop (${gw:-default})"; NET=1
 else
   echo "WARN no internet (needed only for code updates and image builds)"
-  echo "     run: sudo ip route replace default via 192.168.123.222 dev eth0"
+  if ip route | grep -q '^default via 192.168.123.222' && ip -4 addr | grep -q '192\.168\.137\.'; then
+    echo "     WiFi hotspot blocked by stale cable route -- run: sudo ip route del default via 192.168.123.222 dev eth0"
+  else
+    echo "     wired cable: sudo ip route replace default via 192.168.123.222 dev eth0"
+    echo "     WiFi hotspot (unplugged): sudo ip route del default via 192.168.123.222 dev eth0"
+  fi
 fi
 
 echo "== code"
@@ -56,9 +61,9 @@ else
 fi
 
 echo "== containers"
-running=$(docker ps --format '{{.Names}}' | grep -E '^go2(loop|bridge|viz|rec)$' | tr '\n' ' ')
+running=$(docker ps --format '{{.Names}}' | grep -E '^go2(loop|bridge|viz|rec|mid360|remote)$' | tr '\n' ' ')
 if [ -n "$running" ]; then
-  echo "NOTE already running: $running(bash tools/go2loop.sh down / bridge-down / viz-down)"
+  echo "NOTE already running: $running(bash tools/go2loop.sh down / bridge-down / viz-down / mid360-down)"
 else
   echo "OK   no leftover go2 containers"
 fi

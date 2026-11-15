@@ -47,6 +47,9 @@
 #   bash tools/go2loop.sh mid360-calibrate  measure its mount from the floor
 #                                      (robot standing still) -> config/mid360_mount.yaml
 #   bash tools/go2loop.sh mid360-up|mid360-down  driver + /mid360/cloud_odom
+#   bash tools/go2loop.sh cmu-check    READ-ONLY: S1 check of CMU stack topics
+#   bash tools/go2loop.sh cmu-goal X Y send one /way_point goal (m, map frame)
+#   bash tools/go2loop.sh cmu-stop     publish /stop 15 + sport StopMove
 #   bash tools/go2loop.sh state-watch  READ-ONLY: mode/gait/speeds/foot steps the
 #                                      robot reports while you drive with the sticks
 #   bash tools/go2loop.sh remote-up    start/abort the loop from the remote
@@ -227,6 +230,12 @@ case "${1:-}" in
     ;;
   mid360-down)
     docker rm -f go2mid360 >/dev/null 2>&1 && echo "Mid-360 stopped" || echo "Mid-360 was not running"
+    ;;
+  cmu-check|cmu-stop|cmu-goal)
+    sub="${1#cmu-}"; shift
+    IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
+      "$SRC; python3 -u /workspace/tools/cmu_ctl.py $sub $*" \
+      2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
     ;;
   state-watch)
     IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \

@@ -82,6 +82,16 @@ class TestParse(unittest.TestCase):
         self.assertIsNone(r["outcome"])
         self.assertEqual(verdict(None)[1], "warn")
 
+    def test_route_detours_tracked_and_rendered(self):
+        log = ROUTE.replace(
+            "waypoint 2/2",
+            "detour 2: round an obstacle (step 1/2, waypoint 2/2)",
+        )
+        r = parse_demolog(log)
+        self.assertEqual(r["detours"], 2)
+        page = render("route_detour_test", r)
+        self.assertIn("Detours", page)
+
 
 class TestRender(unittest.TestCase):
     def test_numbers_and_escaping(self):

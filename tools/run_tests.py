@@ -32,6 +32,7 @@ SUITES = [
     "tools/tests/test_mid360_mount.py",
     "tools/tests/test_map_diff.py",
     "tools/tests/test_mid360_udp.py",
+    "tools/tests/test_heatmap.py",
     "go2_survey_bridge/test/test_limits.py",
     "go2_survey_bridge/test/test_sport_api.py",
     "go2_survey_bridge/test/test_motion_backend.py",
@@ -42,6 +43,7 @@ SUITES = [
     "go2_survey_loop/test/test_explore_frontier.py",
     "go2_survey_loop/test/test_route.py",
     "go2_survey_loop/test/test_footprint.py",
+    "go2_survey_loop/test/test_cmu.py",
     "sim/tests/test_robot_model.py",
 ]
 

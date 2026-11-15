@@ -14,6 +14,8 @@
 #   --mid360        the Mid-360 as a second LiDAR for the stops, turn memory
 #                   and exploring (needs go2loop.sh mid360-calibrate first);
 #                   the built-in LiDAR stays the one that must be fresh
+#   --cmu           drive via the CMU autonomy stack (/way_point + /stop, D5)
+#                   instead of go2_survey_bridge
 #
 # Options: --shape out_and_back|rectangle  --width W --turn left|right (rectangle)
 #          --backend sport|sport_prep|avoid  --name NAME  --no-viz  --no-map
@@ -49,7 +51,7 @@ cd "$REPO" || exit 1
 G="bash $REPO/tools/go2loop.sh"
 
 LENGTH=""; WIDTH=""; SHAPE=out_and_back; TURN=left; BACKEND=sport; NAME=demo
-EXPLORE=0; LEGS=8; RADIUS=4.0; LEG_MAX=1.5; MINUTES=5; STRATEGY=frontier; MID360=0
+EXPLORE=0; LEGS=8; RADIUS=4.0; LEG_MAX=1.5; MINUTES=5; STRATEGY=frontier; MID360=0; CMU=0
 BREATHING=0; REHEARSE=0; VIZ=1; MAP=1; SKIP_GATE=0
 DETACH_RUN=0; REMOTE=0; WAIT=600
 ARGS=("$@")
@@ -70,6 +72,7 @@ while [ $# -gt 0 ]; do
     --minutes) MINUTES="$2"; shift 2 ;;
     --strategy) STRATEGY="$2"; shift 2 ;;
     --mid360) MID360=1; shift ;;
+    --cmu) CMU=1; BACKEND=cmu; shift ;;
     --backend) BACKEND="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
     --i-confirm-breathing) BREATHING=1; shift ;;
@@ -86,7 +89,8 @@ if [ "$EXPLORE" = 1 ]; then
   SHAPE=explore; LENGTH="$RADIUS"
 fi
 [ -n "$LENGTH" ] || { echo "--length is required (or --explore)" >&2; usage; }
-case "$BACKEND" in sport|sport_prep|avoid) ;; *) echo "--backend must be sport, sport_prep or avoid" >&2; exit 2 ;; esac
+[ "$CMU" = 1 ] && BACKEND=cmu
+case "$BACKEND" in sport|sport_prep|avoid|cmu) ;; *) echo "--backend must be sport, sport_prep, avoid or cmu" >&2; exit 2 ;; esac
 
 STAMP="${DEMO_STAMP:-$(date +%Y%m%d_%H%M%S)}"   # the detached child keeps the parent's
 BAG="${NAME}_${STAMP}"
@@ -128,6 +132,13 @@ if [ "$CHILD" = 0 ]; then
   rc=$?
   if [ "$REHEARSE" = 0 ] && [ "$rc" != 0 ]; then echo "REFUSED: not motion-ready (above)"; exit 2; fi
   if [ "$REHEARSE" = 1 ] && [ "$rc" -gt 1 ]; then echo "REFUSED: sensors not ready (above)"; exit 2; fi
+  if [ "$CMU" = 1 ]; then
+    echo "== CMU autonomy stack check"
+    cmu_flags=""; [ "$REHEARSE" = 0 ] && cmu_flags="--live"
+    if ! $G cmu-check $cmu_flags; then
+      echo "REFUSED: CMU autonomy stack is not ready (above)"; exit 2
+    fi
+  fi
 fi
 
 # ---- detach: the rest runs in its own session, so unplugging can't kill it --
@@ -164,7 +175,8 @@ cleanup() {
   trap - INT TERM
   echo "== $(ts) shutting down (safe order)"
   [ "$REMOTE" = 1 ] && $G remote-down >/dev/null 2>&1   # 0. nothing can restart it
-  $G stop >/dev/null 2>&1                       # 1. mission: zero velocity
+  $G stop >/dev/null 2>&1                       # 1. mission: zero velocity / stop 15
+  [ "$CMU" = 1 ] && [ "$REHEARSE" = 0 ] && $G cmu-stop >/dev/null 2>&1
   if [ "$STARTED_BRIDGE" = 1 ]; then $G bridge-down; fi   # 2. StopMove + hand back
   $G down >/dev/null 2>&1                       # 3. loop node
   [ "$MID360" = 1 ] && $G mid360-down >/dev/null 2>&1   # 3b. the second LiDAR
@@ -193,6 +205,7 @@ if [ "$VIZ" = 1 ]; then
 fi
 
 REC_TOPICS="/utlidar/cloud_deskewed /utlidar/robot_odom"
+[ "$CMU" = 1 ] && REC_TOPICS="$REC_TOPICS /state_estimation /registered_scan"
 if [ "$MID360" = 1 ]; then
   echo "== Mid-360 (second LiDAR)"
   $G mid360-up || bail "Mid-360 did not start"
@@ -209,9 +222,11 @@ sleep 3
 $G camera-snap "${BAG}_camera_start.jpg" >/dev/null 2>&1 || true
 
 if [ "$REHEARSE" = 0 ]; then
-  echo "== bridge (backend $BACKEND)"
-  STARTED_BRIDGE=1                    # before bridge-up: a half-started bridge is still taken down
-  $G bridge-up -p "backend:=$BACKEND" || bail "bridge did not start"
+  if [ "$CMU" = 0 ]; then
+    echo "== bridge (backend $BACKEND)"
+    STARTED_BRIDGE=1                    # before bridge-up: a half-started bridge is still taken down
+    $G bridge-up -p "backend:=$BACKEND" || bail "bridge did not start"
+  fi
   DRY=false
 else
   DRY=true
@@ -234,6 +249,7 @@ else
 fi
 LOOP_ARGS="$LOOP_ARGS -p max_duration_s:=$((MINUTES * 60)).0"
 [ "$MID360" = 1 ] && LOOP_ARGS="$LOOP_ARGS -p extra_cloud_topic:=/mid360/cloud_odom"
+[ "$CMU" = 1 ] && LOOP_ARGS="$LOOP_ARGS -p planner:=cmu"
 $G up $LOOP_ARGS || bail "loop node did not start"
 
 # what the remote trigger did (e.g. a start the loop refused: path blocked)

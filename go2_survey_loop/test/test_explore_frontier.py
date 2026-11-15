@@ -224,6 +224,9 @@ class TestGrid(unittest.TestCase):
         self.assertIn(goal, cost)
         wps = coverage.simplify(g, clear, coverage.path_to(parent, goal), 0.80)
         self.assertTrue(all(clear.get(g.cell_of(x, y), 3.0) >= 0.80 for x, y in wps))
+        pts = [g.centre(here)] + wps
+        for a, b in zip(pts, pts[1:]):
+            self.assertTrue(coverage.line_clear(g, clear, a, b, 0.80))
 
 
 class TestFrontierClosedLoop(unittest.TestCase):

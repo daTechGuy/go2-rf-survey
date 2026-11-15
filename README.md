@@ -261,14 +261,12 @@ Two masks are applied, and both matter:
 - **occupancy** — walls and unmapped cells are never coloured
 - **sample distance** — cells further than `--max-reach` from a real sample are
   left blank. Without this, `griddata` fills rooms the robot never entered,
-  which is the most misleading thing a survey tool can do. The white area in
-  the lower middle of the sample is exactly that: a room left unvisited on
-  purpose to exercise the mask.
-
-Known limitation: the distance mask is euclidean, not geodesic, so two rooms
-sampled either side of a thin wall can bleed through it. Fixing that means a
-geodesic distance transform over the free space — worth doing if the floorplans
-get complicated.
+  which is the most misleading thing a survey tool can do. When `--map` is
+  supplied, reach is measured by 8-connected octile **geodesic** distance
+  through `FREE` cells (`geodesic_distance`), so samples next to a wall cannot
+  bleed through it into an unvisited room on the other side. The white room in
+  the lower middle of the sample is left unvisited on purpose to exercise this
+  mask.
 
 ---
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from get_results import parse_listing, plan, select  # noqa: E402
+from get_results import host_candidates, parse_listing, plan, select  # noqa: E402
 
 TODAY = dt.date(2026, 10, 31)
 LISTING = "\n".join([
@@ -75,6 +75,10 @@ class TestPlan(unittest.TestCase):
         todo, done = plan(chosen, here.get)
         self.assertEqual(paths(done), ["a.png"])
         self.assertEqual(paths(todo), ["b.db3", "c.log"])
+
+    def test_host_candidates_defaults_to_wired_then_wifi(self):
+        self.assertEqual(host_candidates(None), ("go2", "go2w"))
+        self.assertEqual(host_candidates("go2w"), ("go2w",))
 
 
 if __name__ == "__main__":

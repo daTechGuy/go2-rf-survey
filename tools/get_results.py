@@ -32,6 +32,7 @@ import sys
 from pathlib import Path
 
 HOST = "go2"
+FALLBACK_HOSTS = ("go2", "go2w")
 REMOTE_DIR = "surveys"
 STAMP = re.compile(r"_(\d{8})_\d{6}")
 RECORDING_EXT = (".db3", ".mcap")
@@ -88,6 +89,13 @@ def plan(chosen, local_size):
     return todo, done
 
 
+def host_candidates(requested: str | None) -> tuple[str, ...]:
+    """Host aliases to try in order: wired ``go2`` then WiFi ``go2w`` by default."""
+    if requested:
+        return (requested,)
+    return FALLBACK_HOSTS
+
+
 def human(n: float) -> str:
     for unit in ("B", "KB", "MB", "GB"):
         if n < 1024 or unit == "GB":
@@ -104,19 +112,32 @@ def main(argv=None) -> int:
     ap.add_argument("--no-recordings", action="store_true")
     ap.add_argument("--run", help="only this run (name prefix, e.g. room_explore_20261031)")
     ap.add_argument("--list", action="store_true", help="show the plan, copy nothing")
-    ap.add_argument("--host", default=HOST)
+    ap.add_argument("--host", default=None,
+                    help="SSH host alias (default: tries wired 'go2' then WiFi 'go2w')")
     a = ap.parse_args(argv)
 
-    try:
-        res = subprocess.run(["ssh", *SSH_OPTS, a.host, LIST_CMD],
-                             capture_output=True, text=True, timeout=30)
-    except subprocess.TimeoutExpired:
-        print(f"no answer from {a.host} -- is the cable in and the robot on?")
+    host = HOST
+    res = None
+    last_err = ""
+    for cand in host_candidates(a.host):
+        host = cand
+        try:
+            r = subprocess.run(["ssh", *SSH_OPTS, cand, LIST_CMD],
+                               capture_output=True, text=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            last_err = f"no answer from {cand}"
+            continue
+        if r.returncode == 0:
+            res = r
+            break
+        last_err = f"could not list the robot's results ({cand}): {r.stderr.strip()[-200:]}"
+
+    if res is None:
+        print(last_err or f"no answer from {host} -- is the cable/WiFi connected and the robot on?")
+        print("  is the cable or WiFi hotspot up, the robot on, and this a normal (not administrator) window?")
         return 1
-    if res.returncode != 0:
-        print(f"could not list the robot's results ({a.host}): {res.stderr.strip()[-200:]}")
-        print("  is the cable in, the robot on, and this a normal (not administrator) window?")
-        return 1
+    if a.host is None and host != HOST:
+        print(f"connected via {host} (WiFi hotspot)")
 
     chosen = select(parse_listing(res.stdout), dt.date.today(), a.days,
                     recordings=not a.no_recordings, run=a.run)
@@ -140,7 +161,7 @@ def main(argv=None) -> int:
         target.parent.mkdir(parents=True, exist_ok=True)
         part = target.with_name(target.name + ".part")
         print(f"   {human(moved):>9} / {human(total)}  {path}", flush=True)
-        r = subprocess.run(["scp", "-q", *SSH_OPTS, f"{a.host}:{REMOTE_DIR}/{path}", str(part)],
+        r = subprocess.run(["scp", "-q", *SSH_OPTS, f"{host}:{REMOTE_DIR}/{path}", str(part)],
                            capture_output=True, text=True)
         if r.returncode == 0 and part.is_file() and part.stat().st_size == size:
             part.replace(target)

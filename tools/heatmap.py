@@ -15,35 +15,45 @@ Two masks are applied, and both matter:
 * **sample distance** -- a cell further than ``--max-reach`` from any actual
   sample is left blank. Without this, ``griddata`` cheerfully fills a room the
   robot never entered, which is the single most misleading thing a survey
-  tool can do.
-
-Known limitation: the distance mask is euclidean, not geodesic. Two rooms
-sampled either side of a thin wall can bleed into each other through it. Doing
-this properly means a geodesic distance transform over the free space; it is
-worth adding if the floorplans get complicated, and the synthetic fixture
-includes exactly such a wall so the effect is visible.
+  tool can do. When ``--map`` is supplied, reach is measured by 8-connected
+  octile **geodesic** distance through ``FREE`` cells (``geodesic_distance``)
+  so samples cannot bleed through walls into an unvisited room next door.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
-import math
-import sys
 from collections import defaultdict
+import csv
+import heapq
+import math
 from pathlib import Path
+import sys
+from typing import Iterable, Sequence
 
-import numpy as np
+try:
+    import numpy as np
+    import matplotlib
+    matplotlib.use("Agg")                 # no display on the robot or in CI
+    import matplotlib.pyplot as plt       # noqa: E402
+    from matplotlib.colors import LinearSegmentedColormap, Normalize  # noqa: E402
+    from scipy.interpolate import griddata  # noqa: E402
+    from scipy.ndimage import distance_transform_edt  # noqa: E402
+except ImportError:                       # pragma: no cover - stdlib-only test env
+    np = None                             # type: ignore[assignment]
+    matplotlib = None                     # type: ignore[assignment]
+    plt = None                            # type: ignore[assignment]
+    LinearSegmentedColormap = None        # type: ignore[assignment]
+    Normalize = None                      # type: ignore[assignment]
+    griddata = None                       # type: ignore[assignment]
+    distance_transform_edt = None         # type: ignore[assignment]
 
-import matplotlib
-matplotlib.use("Agg")                     # no display on the robot or in CI
-import matplotlib.pyplot as plt           # noqa: E402
-from matplotlib.colors import LinearSegmentedColormap, Normalize  # noqa: E402
-from scipy.interpolate import griddata    # noqa: E402
-from scipy.ndimage import distance_transform_edt  # noqa: E402
-
-import occupancy                          # noqa: E402
-from occupancy import FREE                # noqa: E402
+try:
+    import occupancy                      # noqa: E402
+    from occupancy import FREE            # noqa: E402
+except ImportError:                       # pragma: no cover - stdlib-only test env
+    occupancy = None                      # type: ignore[assignment]
+    FREE = 0                              # type: ignore[assignment]
 
 # RSSI bands used by every site-survey tool, so the output is readable by
 # anyone who has seen one before.
@@ -54,12 +64,21 @@ RSSI_MIN, RSSI_MAX = -90.0, -40.0
 # Sequential ramp, dark-red (weak) through amber to deep teal (strong).
 # Deliberately not red-green: ~8% of men have some form of red-green colour
 # deficiency, and this chart's whole job is to be read at a glance.
-SIGNAL_CMAP = LinearSegmentedColormap.from_list(
-    "signal",
-    ["#5B1A12", "#A93B2B", "#D98324", "#E8C547", "#5FAE8C", "#0C7C72", "#06403C"],
+SIGNAL_CMAP = (
+    LinearSegmentedColormap.from_list(
+        "signal",
+        ["#5B1A12", "#A93B2B", "#D98324", "#E8C547", "#5FAE8C", "#0C7C72", "#06403C"],
+    )
+    if LinearSegmentedColormap is not None
+    else None
 )
 
 GRID_RES_M = 0.10        # heatmap cell size; finer than this just interpolates noise
+_SQRT2 = math.sqrt(2.0)
+_STEPS8 = (
+    (-1, 0, 1.0), (1, 0, 1.0), (0, -1, 1.0), (0, 1, 1.0),
+    (-1, -1, _SQRT2), (-1, 1, _SQRT2), (1, -1, _SQRT2), (1, 1, _SQRT2),
+)
 
 
 def load_survey(path: Path) -> list[dict]:
@@ -103,6 +122,52 @@ def collapse_per_position(rows: list[dict]) -> list[dict]:
     return list(best.values())
 
 
+def geodesic_distance(
+    free: Sequence[Sequence[bool]],
+    samples: Iterable[tuple[int, int]],
+    cell_m: float,
+    max_reach_m: float | None = None,
+) -> list[list[float]]:
+    """Multi-source 8-connected octile distance (m) through ``free`` cells.
+
+    Unlike a Euclidean distance transform, reach cannot pass through walls or
+    unmapped cells (``free[r][c] == False``), nor squeeze diagonally between two
+    touching wall corners. Pure stdlib so it is directly unit-testable.
+    """
+    ny = len(free)
+    nx = len(free[0]) if ny else 0
+    inf = math.inf
+    dist = [[inf] * nx for _ in range(ny)]
+    if ny == 0 or nx == 0 or cell_m <= 0.0:
+        return dist
+
+    limit = inf if max_reach_m is None else float(max_reach_m)
+    pq: list[tuple[float, int, int]] = []
+    for sr, sc in samples:
+        if 0 <= sr < ny and 0 <= sc < nx and dist[sr][sc] > 0.0:
+            dist[sr][sc] = 0.0
+            heapq.heappush(pq, (0.0, sr, sc))
+
+    while pq:
+        d, r, c = heapq.heappop(pq)
+        if d > dist[r][c]:
+            continue
+        for dr, dc, step in _STEPS8:
+            nr, nc = r + dr, c + dc
+            if not (0 <= nr < ny and 0 <= nc < nx):
+                continue
+            if not free[nr][nc]:
+                continue
+            if dr != 0 and dc != 0 and not (free[r + dr][c] and free[r][c + dc]):
+                continue
+            nd = d + step * cell_m
+            if nd > limit or nd >= dist[nr][nc]:
+                continue
+            dist[nr][nc] = nd
+            heapq.heappush(pq, (nd, nr, nc))
+    return dist
+
+
 def interpolate(
     rows: list[dict],
     grid: occupancy.OccupancyGrid | None,
@@ -133,21 +198,15 @@ def interpolate(
 
     masked = np.ma.masked_invalid(field)
 
-    # --- mask 1: distance from a real sample -------------------------------
-    sampled = np.zeros((ny, nx), dtype=bool)
+    # --- mask 1 & 2: occupancy + wall-aware sample distance -----------------
+    sample_rc: list[tuple[int, int]] = []
     for r in rows:
         col = int((r["x"] - xmin) / (xmax - xmin) * (nx - 1))
         row = int((r["y"] - ymin) / (ymax - ymin) * (ny - 1))
         if 0 <= row < ny and 0 <= col < nx:
-            sampled[row, col] = True
+            sample_rc.append((row, col))
     cell_m = max((xmax - xmin) / nx, (ymax - ymin) / ny)
-    reach_cells = max_reach_m / cell_m
-    dist = distance_transform_edt(~sampled)
-    masked = np.ma.masked_where(dist > reach_cells, masked)
 
-    # --- mask 2: occupancy --------------------------------------------------
-    # Vectorised: a per-cell Python loop here cost ~4 s per panel on a 30x18 m
-    # floor, and scales with building size.
     if grid is not None:
         cols = np.floor((gx - grid.origin_x) / grid.resolution).astype(int)
         grows = np.floor((gy - grid.origin_y) / grid.resolution).astype(int)
@@ -157,7 +216,18 @@ def interpolate(
                              np.clip(grows, 0, grid.height - 1))
         inside = np.outer(in_y, in_x)
         free = (grid.cells[rr, cc] == FREE) & inside
-        masked = np.ma.masked_where(~free, masked)
+        dist_m = np.asarray(
+            geodesic_distance(free.tolist(), sample_rc, cell_m, max_reach_m),
+            dtype=float,
+        )
+        masked = np.ma.masked_where((dist_m > max_reach_m) | (~free), masked)
+    else:
+        sampled = np.zeros((ny, nx), dtype=bool)
+        for row, col in sample_rc:
+            sampled[row, col] = True
+        reach_cells = max_reach_m / cell_m
+        dist = distance_transform_edt(~sampled)
+        masked = np.ma.masked_where(dist > reach_cells, masked)
 
     return masked, (xmin, xmax, ymin, ymax)
 

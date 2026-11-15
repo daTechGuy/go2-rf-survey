@@ -12,8 +12,9 @@ if [ -n "${DETACH:-}" ]; then
   case "$DETACH" in
     go2loop)
       dry=true; [[ "$cmd" == *"dry_run:=false"* ]] && dry=false
+      planner=loop; [[ "$cmd" == *"planner:=cmu"* ]] && planner=cmu
       python "$FAKE_LIB_W/fakeloop.py" reset "$dry"
-      echo "go2_loop up (fake), dry_run=$dry" > "$SURV/go2loop.log" ;;
+      echo "go2_loop up (fake), dry_run=$dry, planner=$planner" > "$SURV/go2loop.log" ;;
     go2remote)
       args=$(echo "$cmd" | sed -n 's#.*remote_trigger.py\(.*\) > /surveys/go2remote.log.*#\1#p')
       # shellcheck disable=SC2086
@@ -38,5 +39,12 @@ case "$cmd" in
     shot=$(echo "$cmd" | sed -n 's#.*--once /surveys/\([^ "]*\).*#\1#p')
     ev "camera $shot"
     [ -f "$FAKE/no_camera" ] || echo "fake jpeg" > "$SURV/$shot" ;;
+  *cmu_ctl.py*)
+    sub=$(echo "$cmd" | sed -n 's#.*cmu_ctl.py[[:space:]]*\(.*\)#\1#p')
+    ev "cmu $sub"
+    if [[ "$sub" == check* ]] && [ -f "$FAKE/fail_cmu" ]; then
+      echo "CMU check: NOT READY -- /way_point has 0 subscribers"; exit 1
+    fi
+    echo "CMU $sub OK (fake)" ;;
   *) echo "run.sh $cmd" >> "$FAKE/unhandled" ;;
 esac

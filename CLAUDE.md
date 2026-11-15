@@ -105,7 +105,18 @@ plane harmless, still off. The robot's preflight fails `motion_switcher
 CheckMode` on the first arm after a run, every time; a rerun passes.
 User chose **D5: the CMU stack**.
 
-**Next action:** field guide 05, S0 (install, nothing moves) then S1. Then `python tools\get_results.py` on the laptop.
+**Since (offline, 2026-11-15):** CMU stack S1–S4 wiring built and tested offline:
+`go2_survey_loop/cmu.py` (`step_cmu`, `assess_cmu`), `loop_node.py -p planner:=cmu`
+(drives `/way_point` + `/stop`, skips `go2bridge`, sends `/stop 15` + `StopMove`
+on stop/pause/abort), `tools/cmu_ctl.py` (`go2loop.sh cmu-check | cmu-stop | cmu-goal`),
+and `demo.sh --cmu` (fake-robot scenario 21). Also fixed: `heatmap.py`
+8-connected octile geodesic reach mask over `FREE` cells (no wall bleed into
+unvisited rooms), `coverage.py` `simplify`/`line_clear` when escaping a
+sub-clearance start cell around a corner, `go2_avoid.py` migrated to
+`UnitreeRpc`, `preflight.sh` + `get_results.py` WiFi hotspot (`go2w`) support,
+and `run_report.py` detour counter.
+
+**Next action:** field guide 05, S0 (install, nothing moves) then S1 (`go2loop.sh cmu-check`), S2 (IMU calib), S3 (`go2loop.sh cmu-goal 3.0 0.0`), S4 (`demo.sh --cmu`). Then `python tools\get_results.py` on the laptop.
 Then the 3 m route / classroom (guide 02). Each session:
 route (user sudo) → preflight → `bridge-up` + `turn-test --i-confirm-breathing`
 (defaults to the 1.0 rad/s × 0.5 s turn that passes) → [ASK] demo. Robot-side
@@ -143,8 +154,9 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
 
 - **Pure functions for anything that can be wrong quietly.** `iw` parsing,
   velocity limiting, the watchdog, and the FOV maths are all ROS-free and
-  clock-free so they can be tested without hardware. 437 tests run on a bare
-  Python. Keep it that way — if new logic can be made testable, make it.
+  clock-free so they can be tested without hardware. 465 tests across 27 suites
+  run on a bare Python. Keep it that way — if new logic can be made testable,
+  make it.
 - **Tests before hardware.** `python tools/run_tests.py` must stay green and
   must not acquire dependencies.
 - **The Gazebo sim** (`sim/`, WSL Ubuntu on the laptop, user `rofessor`) runs our
@@ -154,8 +166,9 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
   Windows repo).
 - **Shell flows get the fake robot.** After changing `demo.sh`, `go2loop.sh`
   or `remote_trigger.py`, run `bash tools/fake_robot/run.sh` (Git Bash on the
-  laptop, ~5 min, 20 scenarios): real scripts against fake docker/ROS/remote.
-  It found a pipefail bug that made a healthy `bridge-up` report failure.
+  laptop, ~5 min, 21 scenarios / 116 checks): real scripts against fake
+  docker/ROS/remote. It found a pipefail bug that made a healthy `bridge-up`
+  report failure.
 - **Placeholders are marked loudly.** `config/mount.yaml` and
   `config/MID360_config.json` contain values that are guesses. Never quietly
   treat them as measured.

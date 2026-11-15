@@ -39,12 +39,13 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PointStamped, Twist
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import PointCloud2
-from std_msgs.msg import String
+from std_msgs.msg import Int8, String
 from std_srvs.srv import Trigger
 
+from go2_survey_loop.cmu import SPORT_STOP_MOVE_ID, STOP_ALL, step_cmu
 from go2_survey_loop.explore import ExploreMission, ExploreParams
 from go2_survey_loop.route import DetourParams, RouteMission
 from go2_survey_loop.follower import FollowerParams, Mission, SafetyParams, State
@@ -101,6 +102,12 @@ class LoopNode(Node):
         d("turn", "left")
         d("laps", 1)
         d("dry_run", True)
+        # "internal" (default): publish Twist on cmd_vel_topic for go2_survey_bridge.
+        # "cmu" (D5, guide 05): publish PointStamped on waypoint_topic and Int8 on
+        # stop_topic for the CMU Go2 autonomy stack, plus StopMove on halt.
+        d("planner", "internal")
+        d("waypoint_topic", "/way_point")
+        d("stop_topic", "/stop")
         d("cmd_vel_topic", "/cmd_vel")
         d("odom_topic", "/utlidar/robot_odom")
         d("cloud_topic", "/utlidar/cloud_deskewed")
@@ -145,6 +152,7 @@ class LoopNode(Node):
 
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.dry_run = bool(g("dry_run"))
+        self.planner = str(g("planner"))
         self.follow = FollowerParams(max_vx=g("max_vx"), min_vx=g("min_vx"),
                                      max_vyaw=g("max_vyaw"),
                                      min_vyaw=g("min_vyaw"), reach_tol=g("reach_tol"),
@@ -157,6 +165,7 @@ class LoopNode(Node):
         self.stride = int(g("cloud_stride"))
 
         self._pose: Pose2D | None = None
+        self._pose_z: float = 0.0
         self._pose_t: float | None = None
         self._odom_frame = ""
         self._cloud_t: float | None = None
@@ -179,11 +188,29 @@ class LoopNode(Node):
         self._last_state = None
         self._ticks = 0
 
+        odom_topic = str(g("odom_topic"))
+        cloud_topic = str(g("cloud_topic"))
+        if self.planner == "cmu":
+            if odom_topic == "/utlidar/robot_odom":
+                odom_topic = "/state_estimation"
+            if cloud_topic == "/utlidar/cloud_deskewed":
+                cloud_topic = "/registered_scan"
+
         self.cmd_pub = self.create_publisher(Twist, g("cmd_vel_topic"), 10)
+        self.wp_pub = self.create_publisher(PointStamped, g("waypoint_topic"), 10) if self.planner == "cmu" else None
+        self.stop_pub = self.create_publisher(Int8, g("stop_topic"), 10) if self.planner == "cmu" else None
+        self.sport_pub = None
+        if self.planner == "cmu":
+            try:
+                from unitree_api.msg import Request as SportRequest
+                self._sport_req_cls = SportRequest
+                self.sport_pub = self.create_publisher(SportRequest, "/api/sport/request", 10)
+            except ImportError:
+                self._sport_req_cls = None
         self.status_pub = self.create_publisher(String, "~/status", 10)
-        self.create_subscription(Odometry, g("odom_topic"), self._on_odom,
+        self.create_subscription(Odometry, odom_topic, self._on_odom,
                                  qos_profile_sensor_data)
-        self.create_subscription(PointCloud2, g("cloud_topic"), self._on_cloud,
+        self.create_subscription(PointCloud2, cloud_topic, self._on_cloud,
                                  qos_profile_sensor_data)
         if g("extra_cloud_topic"):
             self.create_subscription(PointCloud2, g("extra_cloud_topic"), self._on_extra_cloud,
@@ -193,8 +220,10 @@ class LoopNode(Node):
         self.create_service(Trigger, "~/resume", self._srv_resume)
         self.create_timer(1.0 / max(1.0, g("rate_hz")), self._tick)
 
+        out_desc = (f"{g('waypoint_topic')} + {g('stop_topic')} (CMU planner)"
+                    if self.planner == "cmu" else str(g("cmd_vel_topic")))
         mode = "DRY RUN -- nothing will be published" if self.dry_run \
-            else f"LIVE -- publishing {g('cmd_vel_topic')}"
+            else f"LIVE -- publishing {out_desc}"
         route = (f"explore: {g('explore_legs')} legs of <= {g('explore_leg_max')} m "
                  f"within {g('explore_radius')} m, then home"
                  if g("shape") == "explore" else
@@ -216,6 +245,7 @@ class LoopNode(Node):
     def _on_odom(self, msg: Odometry) -> None:
         p, q = msg.pose.pose.position, msg.pose.pose.orientation
         self._pose = Pose2D(p.x, p.y, yaw_from_quaternion(q.x, q.y, q.z, q.w))
+        self._pose_z = float(p.z)
         self._pose_t = self._now()          # receipt time: robot clocks may differ
         self._odom_frame = msg.header.frame_id
 
@@ -308,6 +338,34 @@ class LoopNode(Node):
         t.angular.z = float(vyaw)
         self.cmd_pub.publish(t)
 
+    def _publish_cmu(self, cmu_out) -> None:
+        if self.dry_run:
+            return
+        if self.stop_pub is not None:
+            self.stop_pub.publish(Int8(data=int(cmu_out.stop_mask)))
+        if cmu_out.waypoint is not None and self.wp_pub is not None:
+            pt = PointStamped()
+            pt.header.frame_id = self._odom_frame or "map"
+            pt.header.stamp = self.get_clock().now().to_msg()
+            pt.point.x, pt.point.y, pt.point.z = cmu_out.waypoint
+            self.wp_pub.publish(pt)
+        if cmu_out.send_sport_stop:
+            self._send_sport_stop()
+
+    def _send_sport_stop(self) -> None:
+        if self.dry_run or self.sport_pub is None or self._sport_req_cls is None:
+            return
+        req = self._sport_req_cls()
+        req.header.identity.api_id = SPORT_STOP_MOVE_ID
+        self.sport_pub.publish(req)
+
+    def _halt_output(self) -> None:
+        self._publish(0.0, 0.0)
+        if self.planner == "cmu" and not self.dry_run:
+            if self.stop_pub is not None:
+                self.stop_pub.publish(Int8(data=STOP_ALL))
+            self._send_sport_stop()
+
     def _tick(self) -> None:
         now = self._now()
         oa, ca = self._ages(now)
@@ -326,13 +384,20 @@ class LoopNode(Node):
             return
 
         m = self.mission
-        if isinstance(m, ExploreMission):
-            obst = [p for scan in self._obst_scans for p in scan]
-            cmd = m.step(now, self._pose, oa, ca, front, near, obst, self._turn_near)
+        obst = [p for scan in self._obst_scans for p in scan] if isinstance(m, ExploreMission) else ()
+        if self.planner == "cmu":
+            cmd, cmu_out = step_cmu(
+                m, now, self._pose, oa, ca, front, near, obst,
+                pose_z=self._pose_z, was_running=(self._last_state == State.RUNNING))
+            if cmd.publish:
+                self._publish_cmu(cmu_out)
         else:
-            cmd = m.step(now, self._pose, oa, ca, front, near, self._turn_near)
-        if cmd.publish:
-            self._publish(cmd.vx, cmd.vyaw)
+            if isinstance(m, ExploreMission):
+                cmd = m.step(now, self._pose, oa, ca, front, near, obst, self._turn_near)
+            else:
+                cmd = m.step(now, self._pose, oa, ca, front, near, self._turn_near)
+            if cmd.publish:
+                self._publish(cmd.vx, cmd.vyaw)
 
         if cmd.state != self._last_state:
             # One call site per severity. rclpy's logger raises "Logger
@@ -347,8 +412,14 @@ class LoopNode(Node):
             self._last_state = cmd.state
 
         tag = "would send" if self.dry_run else "send"
-        self._status(f"{cmd.state.value} | {cmd.reason} | {tag} vx={cmd.vx:.2f} "
-                     f"vyaw={cmd.vyaw:.2f} | {sensors}")
+        if self.planner == "cmu":
+            wp_str = ("none" if cmu_out.waypoint is None
+                      else f"({cmu_out.waypoint[0]:.2f},{cmu_out.waypoint[1]:.2f})")
+            self._status(f"{cmd.state.value} | {cmd.reason} | {tag} wp={wp_str} "
+                         f"stop={cmu_out.stop_mask} | {sensors}")
+        else:
+            self._status(f"{cmd.state.value} | {cmd.reason} | {tag} vx={cmd.vx:.2f} "
+                         f"vyaw={cmd.vyaw:.2f} | {sensors}")
 
     def _status(self, text: str) -> None:
         self.status_pub.publish(String(data=text))
@@ -428,7 +499,7 @@ class LoopNode(Node):
             res.success, res.message = True, "no mission"
             return res
         self.mission.abort(self._now(), "stopped by operator")
-        self._publish(0.0, 0.0)
+        self._halt_output()
         res.success = True
         res.message = ("mission aborted (dry run: nothing was being published)"
                        if self.dry_run else "mission aborted, zero velocity sent")
@@ -441,7 +512,8 @@ class LoopNode(Node):
             return res
         now = self._now()
         oa, ca = self._ages(now)
-        ok, msg = self.mission.resume(oa, ca, *self._counts(now))
+        front, near = self._counts(now)
+        ok, msg = self.mission.resume(oa, ca, 0 if self.planner == "cmu" else front, near)
         res.success, res.message = ok, msg
         if ok:                                   # separate sites: see _tick
             self.get_logger().info(f"resume: {msg}")
@@ -451,7 +523,7 @@ class LoopNode(Node):
 
     def destroy_node(self) -> bool:
         try:
-            self._publish(0.0, 0.0)
+            self._halt_output()
         except Exception:
             pass
         return super().destroy_node()

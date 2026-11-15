@@ -33,6 +33,13 @@ case "$1" in
         ev "service $svc"
         python "$FAKE_LIB_W/fakeloop.py" service "$svc" | grep -o 'success=.*' ;;
       *"service call /go2_live_map/reset"*) echo "success=True, message='map cleared'" ;;
+      *"cmu_ctl.py"*)
+        sub=$(echo "$cmd" | sed -n 's#.*cmu_ctl.py[[:space:]]*\(.*\)#\1#p')
+        ev "cmu $sub"
+        if [[ "$sub" == check* ]] && [ -f "$FAKE/fail_cmu" ]; then
+          echo "CMU check: NOT READY -- /way_point has 0 subscribers"; exit 1
+        fi
+        echo "CMU $sub OK (fake)" ;;
       *"ros2 daemon"*) ;;
       *) echo "exec $name: $cmd" >> "$FAKE/unhandled" ;;
     esac

@@ -356,6 +356,32 @@ if scenario 20 "backend sport_prep: own stage gate, bridge gets the backend"; th
   showif "$f0"
 fi
 
+if scenario 21 "CMU mode (--cmu): checks stack, skips go2bridge, stops CMU on exit"; then
+  echo "== $CUR"; fresh 21; f0=$FAILS
+  stage1    # a pass on plain sport says nothing about cmu
+  demo --length 1.0 --i-confirm-breathing --cmu --remote-start --detach
+  check "refused: Stage 1 was on sport"   has "$FAKE/parent.out" "backend 'sport', not 'cmu'"
+  python -c "import json,time; print(json.dumps({'epoch': time.time(), 'backend': 'cmu'}))" \
+    > "$HOME/surveys/.stage1_pass"
+  touch "$FAKE/fail_cmu"
+  demo --length 1.0 --i-confirm-breathing --cmu --remote-start --detach
+  check "refused when cmu-check fails"    has "$FAKE/parent.out" 'REFUSED: CMU autonomy stack'
+  check "parent exits 2 on cmu-check"     rc_is 2
+  rm -f "$FAKE/fail_cmu"
+  demo --length 1.0 --i-confirm-breathing --cmu --name cmuwalk --remote-start --detach
+  check "allowed when CMU ready"          has "$FAKE/parent.out" 'SAFE TO UNPLUG'
+  check "loop started with planner=cmu"   has "$HOME/surveys/go2loop.log" 'planner=cmu'
+  check "no go2bridge in CMU mode"        stopped go2bridge
+  hold $START 2.2
+  check "demo finishes"                   wait_demo 40
+  check "finished: done"                  has "$(dlog)" 'demo finished: done'
+  check "no go2bridge ever started"       hasnt "$FAKE/events.log" 'go2bridge'
+  check "order: service stop before cmu stop" before 'service stop' 'cmu stop'
+  check "order: cmu stop before loop down"    before 'cmu stop' 'stop go2loop'
+  check "Stage 2 recorded for cmu"        has "$HOME/surveys/.stage2_pass" '"cmu"'
+  showif "$f0"
+fi
+
 pkill -f remote_trigger.py 2>/dev/null
 export HOME="$REAL_HOME"
 rm -rf "$WORK"

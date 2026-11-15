@@ -238,20 +238,21 @@ def line_clear(grid: Grid, clear: dict, a, b, min_clearance: float, cap: float =
                hard_min: float = 0.55) -> bool:
     """Every point of the straight segment a -> b (metres) sits in a FREE cell
     with at least ``min_clearance`` (the first cell, where the robot stands,
-    excepted; if ``first`` sits below ``min_clearance``, cells climbing
-    monotonically out of the start zone above ``hard_min`` to ``min_clearance``
-    are allowed)."""
+    excepted; if ``first`` sits below ``min_clearance``, cells climbing out of
+    the start zone above ``hard_min`` without moving closer to the obstacle are
+    allowed)."""
     (ax, ay), (bx, by) = a, b
     steps = max(1, int(math.hypot(bx - ax, by - ay) / (grid.cell * 0.5)))
     first = grid.cell_of(ax, ay)
     end = grid.cell_of(bx, by)
     if first is None or end is None:
         return False
-    prev_cl = clear.get(first, cap)
-    reached_min = prev_cl >= min_clearance
-    if not reached_min and clear.get(end, cap) < min_clearance:
-        return False
+    first_cl = clear.get(first, cap)
+    end_cl = clear.get(end, cap)
+    reached_min = first_cl >= min_clearance
     floor_cl = min(min_clearance, hard_min)
+    if not reached_min and (end_cl < first_cl - 1e-6 or end_cl < floor_cl):
+        return False
     for k in range(steps + 1):
         x, y = ax + (bx - ax) * k / steps, ay + (by - ay) * k / steps
         c = grid.cell_of(x, y)
@@ -264,13 +265,12 @@ def line_clear(grid: Grid, clear: dict, a, b, min_clearance: float, cap: float =
         cl = clear.get(c, cap)
         if cl >= min_clearance:
             reached_min = True
-        elif reached_min or cl < prev_cl - 1e-6 or cl < floor_cl:
+        elif reached_min or cl < first_cl - 1e-6 or cl < floor_cl:
             return False
-        prev_cl = cl
     return True
 
 
-def simplify(grid: Grid, clear: dict, cells, min_clearance: float):
+def simplify(grid: Grid, clear: dict, cells, min_clearance: float, hard_min: float = 0.55):
     """Path cells -> the fewest waypoints (metres) whose straight lines keep
     the clearance. The robot's own cell is not a waypoint."""
     pts = [grid.centre(c) for c in cells]
@@ -279,13 +279,8 @@ def simplify(grid: Grid, clear: dict, cells, min_clearance: float):
     out, i = [], 0
     while i < len(pts) - 1:
         j = len(pts) - 1
-        while j > i + 1 and not line_clear(grid, clear, pts[i], pts[j], min_clearance):
+        while j > i + 1 and not line_clear(grid, clear, pts[i], pts[j], min_clearance, hard_min=hard_min):
             j -= 1
-        if clear.get(cells[j], 3.0) < min_clearance:
-            for k in range(j + 1, len(pts)):
-                if clear.get(cells[k], 3.0) >= min_clearance:
-                    j = k
-                    break
         out.append(pts[j])
         i = j
     return out

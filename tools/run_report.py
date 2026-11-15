@@ -37,14 +37,14 @@ def parse_demolog(text: str) -> dict:
     """What a demo.sh log says about its run. Pure; missing bits are None."""
     r = {"what": None, "outcome": None, "finished_at": None, "started_at": None,
          "ended_at": None, "timeline": [], "pauses": [], "path_m": None, "gap_m": None,
-         "extent": None, "legs": None, "mode": "route", "settings": []}
+         "extent": None, "legs": None, "detours": 0, "mode": "route", "settings": []}
     last = None
     for line in text.splitlines():
         if line.startswith("== LIVE run:") or line.startswith("== REHEARSAL"):
             r["what"] = r["what"] or line[3:].strip()
             if "explore" in line:
                 r["mode"] = "explore"
-        if line.strip().startswith(("route ", "explore:", "speed <=")):
+        if line.strip().startswith(("route ", "explore:", "speed <=", "planner:")):
             r["settings"].append(line.strip())
         m = REMOTE_START.search(line)
         if m and r["started_at"] is None:
@@ -65,6 +65,9 @@ def parse_demolog(text: str) -> dict:
             m2 = re.search(r"explored (\d+) legs", reason)
             if m2:
                 r["legs"] = int(m2.group(1))
+            m3 = re.search(r"detour (\d+):", reason)
+            if m3:
+                r["detours"] = max(r["detours"], int(m3.group(1)))
         m = FINISHED.search(line)
         if m:
             r["finished_at"], r["outcome"] = m.group(1), m.group(2).strip()
@@ -118,6 +121,8 @@ def render(name: str, r: dict, floorplan=None, cam_start=None, cam_end=None) -> 
         nums.append(("Finished from start", f"{r['gap_m']:.2f} m"))
     if r["legs"] is not None:
         nums.append(("Legs explored", str(r["legs"])))
+    if r.get("detours", 0) > 0:
+        nums.append(("Detours", str(r["detours"])))
     if r["extent"]:
         nums.append(("Map size", r["extent"]))
     nums.append(("Pauses", str(len(r["pauses"]))))
