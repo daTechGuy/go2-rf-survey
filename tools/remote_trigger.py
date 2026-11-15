@@ -23,15 +23,29 @@ from pathlib import Path
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from std_msgs.msg import String
+from std_msgs.msg import Int8, String
 from std_srvs.srv import Trigger
 from unitree_go.msg import WirelessController
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "go2_survey_bridge"))
 from remote_keys import (DEFAULT_ABORT, DEFAULT_START, HARD_STOP,  # noqa: E402
                          RemoteTrigger, action_for, decode, state_of)
 
+try:
+    from go2_survey_bridge.sport_api import STOP_MOVE, build_stop_move_request
+except ImportError:  # pragma: no cover - environment
+    STOP_MOVE = 1003
+    build_stop_move_request = None
+
+try:
+    from unitree_api.msg import Request as SportRequest
+except ImportError:  # pragma: no cover - environment
+    SportRequest = None
+
 LOOP = "/go2_loop"
+STOP_ALL = 15
 
 
 class TriggerNode(Node):
@@ -41,6 +55,9 @@ class TriggerNode(Node):
         self.state = None
         self.clients_ = {s: self.create_client(Trigger, f"{LOOP}/{s}")
                          for s in ("start", "resume", "stop")}
+        self.stop_pub = self.create_publisher(Int8, "/stop", 10)
+        self.sport_pub = (self.create_publisher(SportRequest, "/api/sport/request", 10)
+                          if SportRequest is not None else None)
         self.create_subscription(String, f"{LOOP}/status", self._on_status, 10)
         self.create_subscription(WirelessController, "/wirelesscontroller",
                                  self._on_remote, qos_profile_sensor_data)
@@ -52,12 +69,26 @@ class TriggerNode(Node):
     def _on_status(self, msg: String) -> None:
         self.state = state_of(msg.data)
 
+    def _direct_stop(self) -> None:
+        """Stop the CMU planner (/stop 15) and the robot (StopMove) directly,
+        without waiting for /go2_loop/stop -- works even if the loop is dead."""
+        self.stop_pub.publish(Int8(data=STOP_ALL))
+        if self.sport_pub is not None and SportRequest is not None:
+            if build_stop_move_request is not None:
+                req = build_stop_move_request(SportRequest)
+            else:
+                req = SportRequest()
+                req.header.identity.api_id = STOP_MOVE
+            self.sport_pub.publish(req)
+
     def _on_remote(self, msg: WirelessController) -> None:
         self._msgs += 1
         t = self.get_clock().now().nanoseconds * 1e-9
         event = self.trig.feed(t, msg.keys, (msg.lx, msg.ly, msg.rx, msg.ry))
         if event is None:
             return
+        if event == "abort":
+            self._direct_stop()
         service = action_for(event, self.state)
         print(f"{time.strftime('%H:%M:%S')} remote {event} (loop {self.state}) -> "
               f"{service or 'nothing to do'}", flush=True)

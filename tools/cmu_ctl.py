@@ -19,13 +19,22 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import PointStamped
 from nav_msgs.msg import Odometry, Path as PathMsg
+from rcl_interfaces.msg import ParameterType
+from rcl_interfaces.srv import GetParameters
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import Int8
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "go2_survey_loop"))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "go2_survey_loop"))
+sys.path.insert(0, str(ROOT / "go2_survey_bridge"))
 from go2_survey_loop.cmu import (  # noqa: E402
     CMU_FRAME, SPORT_STOP_MOVE_ID, STOP_ALL, STOP_FREE, assess_cmu,
 )
+
+try:
+    from go2_survey_bridge.sport_api import build_stop_move_request
+except ImportError:  # pragma: no cover - environment
+    build_stop_move_request = None
 
 try:
     from unitree_api.msg import Request as SportRequest
@@ -33,6 +42,35 @@ except ImportError:  # pragma: no cover - environment
     SportRequest = None
 
 WINDOW = 3.0
+
+
+def _get_params(node: Node, target: str, names: list[str], timeout_s: float = 0.8) -> dict:
+    """Best-effort ``/<target>/get_parameters`` query; {} if the node is absent."""
+    cli = node.create_client(GetParameters, f"/{target}/get_parameters")
+    try:
+        if not cli.wait_for_service(timeout_sec=timeout_s):
+            return {}
+        req = GetParameters.Request(names=list(names))
+        fut = cli.call_async(req)
+        end = time.monotonic() + timeout_s
+        while time.monotonic() < end and not fut.done():
+            rclpy.spin_once(node, timeout_sec=0.02)
+        res = fut.result() if fut.done() else None
+        if res is None:
+            return {}
+        out = {}
+        for name, val in zip(names, res.values):
+            if val.type == ParameterType.PARAMETER_BOOL:
+                out[name] = bool(val.bool_value)
+            elif val.type == ParameterType.PARAMETER_DOUBLE:
+                out[name] = float(val.double_value)
+            elif val.type == ParameterType.PARAMETER_INTEGER:
+                out[name] = int(val.integer_value)
+            elif val.type == ParameterType.PARAMETER_STRING:
+                out[name] = str(val.string_value)
+        return out
+    finally:
+        node.destroy_client(cli)
 
 
 def cmd_check(live: bool = False) -> int:
@@ -65,7 +103,11 @@ def cmd_check(live: bool = False) -> int:
         for k in counts:
             counts[k] = 0
         spin(WINDOW)
-        sport_pubs = node.count_publishers("/api/sport/request")
+        lp = _get_params(node, "localPlanner", ["autonomyMode", "autonomySpeed", "maxSpeed"])
+        pf = _get_params(node, "pathFollower", ["autonomyMode", "autonomySpeed", "maxSpeed", "is_real_robot"])
+        am = (False if (lp.get("autonomyMode") is False or pf.get("autonomyMode") is False)
+              else True if (lp.get("autonomyMode") is True and pf.get("autonomyMode") is True)
+              else lp.get("autonomyMode", pf.get("autonomyMode")))
         snap = {
             "state_est_hz": counts["se"] / WINDOW,
             "state_est_frame": frames["se"],
@@ -73,7 +115,16 @@ def cmd_check(live: bool = False) -> int:
             "reg_scan_frame": frames["rs"],
             "terrain_hz": counts["ter"] / WINDOW,
             "path_hz": counts["path"] / WINDOW,
-            "sport_pub_count": sport_pubs,
+            "waypoint_sub_count": node.count_subscribers("/way_point"),
+            "stop_sub_count": node.count_subscribers("/stop"),
+            "joy_pub_count": node.count_publishers("/joy"),
+            "sport_pub_count": node.count_publishers("/api/sport/request"),
+            "autonomy_mode": am,
+            "autonomy_speed": max(v for v in (lp.get("autonomySpeed"), pf.get("autonomySpeed")) if v is not None)
+                              if any(v is not None for v in (lp.get("autonomySpeed"), pf.get("autonomySpeed"))) else None,
+            "max_speed": max(v for v in (lp.get("maxSpeed"), pf.get("maxSpeed")) if v is not None)
+                         if any(v is not None for v in (lp.get("maxSpeed"), pf.get("maxSpeed"))) else None,
+            "is_real_robot": pf.get("is_real_robot"),
         }
         ready, lines = assess_cmu(snap, sensing_only=not live)
         print("\n".join(lines))
@@ -94,8 +145,11 @@ def cmd_stop() -> int:
         while time.monotonic() - t0 < 0.6:
             stop_pub.publish(Int8(data=STOP_ALL))
             if sport_pub is not None:
-                req = SportRequest()
-                req.header.identity.api_id = SPORT_STOP_MOVE_ID
+                if build_stop_move_request is not None:
+                    req = build_stop_move_request(SportRequest)
+                else:
+                    req = SportRequest()
+                    req.header.identity.api_id = SPORT_STOP_MOVE_ID
                 sport_pub.publish(req)
             rclpy.spin_once(node, timeout_sec=0.05)
             time.sleep(0.05)

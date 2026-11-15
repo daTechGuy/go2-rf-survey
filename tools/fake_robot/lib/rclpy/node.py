@@ -35,6 +35,11 @@ class _Client:
         return _Future(r)
 
 
+class _Pub:
+    def publish(self, _msg):
+        pass
+
+
 class Node:
     def __init__(self, name):
         self._name = name
@@ -43,6 +48,9 @@ class Node:
 
     def create_subscription(self, _type, topic, cb, _qos):
         self._subs.setdefault(topic, []).append(cb)
+
+    def create_publisher(self, _type, _topic, _qos=10):
+        return _Pub()
 
     def create_client(self, srv_type, name):
         return _Client(srv_type, name)
@@ -55,3 +63,4 @@ class Node:
 
     def destroy_node(self):
         pass
+

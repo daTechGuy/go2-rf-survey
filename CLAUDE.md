@@ -106,10 +106,15 @@ CheckMode` on the first arm after a run, every time; a rerun passes.
 User chose **D5: the CMU stack**.
 
 **Since (offline, 2026-11-15):** CMU stack S1–S4 wiring built and tested offline:
-`go2_survey_loop/cmu.py` (`step_cmu`, `assess_cmu`), `loop_node.py -p planner:=cmu`
-(drives `/way_point` + `/stop`, skips `go2bridge`, sends `/stop 15` + `StopMove`
-on stop/pause/abort), `tools/cmu_ctl.py` (`go2loop.sh cmu-check | cmu-stop | cmu-goal`),
-and `demo.sh --cmu` (fake-robot scenario 21). Also fixed: `heatmap.py`
+`go2_survey_loop/cmu.py` (`step_cmu`, `assess_cmu`, `vehicle_pose`, `carrot`, `passed`),
+`loop_node.py -p planner:=cmu` (drives `/way_point` + `/stop`, skips `go2bridge`,
+shifts `/state_estimation` back by `sensorOffsetX` = 0.3 m, sends 0.8 m carrots
+and advances waypoints on line-crossing so `pathFollower`'s 0.75 m slow-down /
+0.3 m stop zone cannot stall short of `reach_tol`, sends `/stop 15` + `StopMove`
+on stop/pause/abort), `tools/cmu_ctl.py` (`go2loop.sh cmu-check | cmu-stop | cmu-goal`:
+accepts Point-LIO's `camera_init` frame and checks `autonomyMode` / `maxSpeed` /
+`/joy` / subscribers), `remote_trigger.py` (direct `/stop 15` + `StopMove` on
+remote abort), and `demo.sh --cmu` (fake-robot scenario 21). Also fixed: `heatmap.py`
 8-connected octile geodesic reach mask over `FREE` cells (no wall bleed into
 unvisited rooms), `coverage.py` `simplify`/`line_clear` when escaping a
 sub-clearance start cell around a corner, `go2_avoid.py` migrated to
@@ -154,7 +159,7 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
 
 - **Pure functions for anything that can be wrong quietly.** `iw` parsing,
   velocity limiting, the watchdog, and the FOV maths are all ROS-free and
-  clock-free so they can be tested without hardware. 465 tests across 27 suites
+  clock-free so they can be tested without hardware. 470 tests across 27 suites
   run on a bare Python. Keep it that way — if new logic can be made testable,
   make it.
 - **Tests before hardware.** `python tools/run_tests.py` must stay green and

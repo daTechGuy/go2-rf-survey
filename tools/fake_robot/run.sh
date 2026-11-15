@@ -55,9 +55,12 @@ press() { echo "$*" > "$FAKE/remote_now"; }
 hold()  { press "$1"; /usr/bin/sleep "$2"; press 0; }
 dlog()  { ls -t "$HOME"/surveys/*.demolog 2>/dev/null | head -1; }
 demo_pid() { cat "$HOME/surveys/.demo.pid" 2>/dev/null; }
-wait_demo() {  # until the detached demo exits
+wait_demo() {  # until the detached demo exits (removes .demo.pid on EXIT)
   local pid; pid=$(demo_pid); [ -n "$pid" ] || return 0
-  for _ in $(seq $(( ${1:-60} * 5 ))); do kill -0 "$pid" 2>/dev/null || return 0; /usr/bin/sleep 0.2; done
+  for _ in $(seq $(( ${1:-60} * 5 ))); do
+    [ ! -f "$HOME/surveys/.demo.pid" ] || ! kill -0 "$pid" 2>/dev/null && return 0
+    /usr/bin/sleep 0.2
+  done
   return 1
 }
 wait_log() {  # wait_log PATTERN [secs]

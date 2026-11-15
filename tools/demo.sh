@@ -237,11 +237,12 @@ if [ "$EXPLORE" = 1 ]; then
   # wider stops than a route's: exploring a classroom brushed a podium and a
   # desk with the route's 0.55 m ring / 0.5 m stop / 0.35 m lane (2026-10-31)
   # ROS parameters are typed: --radius 10 must reach the node as 10.00
+  ring=0.70; [ "$CMU" = 1 ] && ring=0.55      # CMU steers closer than 0.70 m
   LOOP_ARGS="-p shape:=explore -p explore_legs:=$LEGS -p dry_run:=$DRY"
   LOOP_ARGS="$LOOP_ARGS -p explore_radius:=$(printf %.2f "$RADIUS")"
   LOOP_ARGS="$LOOP_ARGS -p explore_leg_max:=$(printf %.2f "$LEG_MAX")"
   LOOP_ARGS="$LOOP_ARGS -p explore_strategy:=$STRATEGY"
-  LOOP_ARGS="$LOOP_ARGS -p clearance_radius:=0.70 -p stop_distance:=0.70 -p lane_half_width:=0.45"
+  LOOP_ARGS="$LOOP_ARGS -p clearance_radius:=$ring -p stop_distance:=0.70 -p lane_half_width:=0.45"
   LOOP_ARGS="$LOOP_ARGS -p turn_clearance:=0.55"
 else
   LOOP_ARGS="-p shape:=$SHAPE -p length:=$LENGTH -p dry_run:=$DRY"

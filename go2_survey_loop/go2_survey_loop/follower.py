@@ -250,6 +250,21 @@ class Mission:
             self.state, self.reason = State.RUNNING, "skipped a waypoint by an obstacle"
         return True
 
+    def pass_waypoint(self, now: float) -> bool:
+        """Running, and the robot has already crossed past the current
+        waypoint along the leg (used with the CMU stack, which swerves round
+        obstacles rather than hitting the point): advance to the next, or
+        finish after the last."""
+        if self.state != State.RUNNING:
+            return False
+        self.index += 1
+        self._turning, self._turn_dir, self._stall_ref = False, 0.0, None
+        if self.index >= len(self.waypoints):
+            self._end(State.DONE, "loop complete", now)
+        else:
+            self.reason = self.progress()
+        return True
+
     def reroute(self, waypoints, index: int, reason: str) -> None:
         """New waypoints, carrying on from ``index`` -- from a pause, a
         detour round an obstacle (route.py). Unlike resume() it may leave

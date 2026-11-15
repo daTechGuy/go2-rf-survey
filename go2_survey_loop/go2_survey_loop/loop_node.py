@@ -45,7 +45,10 @@ from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import Int8, String
 from std_srvs.srv import Trigger
 
-from go2_survey_loop.cmu import SPORT_STOP_MOVE_ID, STOP_ALL, step_cmu
+from go2_survey_loop.cmu import (
+    CARROT_M, PASS_LATERAL_M, SENSOR_OFFSET_X, SPORT_STOP_MOVE_ID, STOP_ALL,
+    step_cmu, vehicle_pose,
+)
 from go2_survey_loop.explore import ExploreMission, ExploreParams
 from go2_survey_loop.route import DetourParams, RouteMission
 from go2_survey_loop.follower import FollowerParams, Mission, SafetyParams, State
@@ -56,6 +59,10 @@ from go2_survey_loop.obstacles import (
     ObstacleMemory, ObstacleParams, classify, floor_from_scan, floor_plane_from_scan, floor_xy,
     median, obstacle_xy, ray_points, ring_count,
 )
+try:
+    from go2_survey_bridge.sport_api import build_stop_move_request as _build_stop_move
+except ImportError:
+    _build_stop_move = None
 
 _POINTFIELD = {1: "i1", 2: "u1", 3: "i2", 4: "u2", 5: "i4", 6: "u4", 7: "f4", 8: "f8"}
 
@@ -108,6 +115,9 @@ class LoopNode(Node):
         d("planner", "internal")
         d("waypoint_topic", "/way_point")
         d("stop_topic", "/stop")
+        d("cmu_sensor_offset_x", SENSOR_OFFSET_X)   # m, L1 ahead of body centre
+        d("cmu_carrot_m", CARROT_M)                 # m beyond the waypoint (pathFollower slows inside 0.75 m)
+        d("cmu_pass_lateral_m", PASS_LATERAL_M)     # m: crossed the waypoint's line within this -> reached
         d("cmd_vel_topic", "/cmd_vel")
         d("odom_topic", "/utlidar/robot_odom")
         d("cloud_topic", "/utlidar/cloud_deskewed")
@@ -186,6 +196,7 @@ class LoopNode(Node):
         self._frame_warned = False
         self.mission: Mission | None = None
         self._last_state = None
+        self._cmu_active = False                # a /way_point was published last tick
         self._ticks = 0
 
         odom_topic = str(g("odom_topic"))
@@ -244,7 +255,13 @@ class LoopNode(Node):
 
     def _on_odom(self, msg: Odometry) -> None:
         p, q = msg.pose.pose.position, msg.pose.pose.orientation
-        self._pose = Pose2D(p.x, p.y, yaw_from_quaternion(q.x, q.y, q.z, q.w))
+        pose = Pose2D(p.x, p.y, yaw_from_quaternion(q.x, q.y, q.z, q.w))
+        if self.planner == "cmu":
+            # Point-LIO's /state_estimation is the L1 LiDAR's pose; shift back
+            # to the body centre so our body box, clearance ring and waypoints
+            # match localPlanner / pathFollower (sensorOffsetX).
+            pose = vehicle_pose(pose, float(self.get_parameter("cmu_sensor_offset_x").value))
+        self._pose = pose
         self._pose_z = float(p.z)
         self._pose_t = self._now()          # receipt time: robot clocks may differ
         self._odom_frame = msg.header.frame_id
@@ -355,8 +372,11 @@ class LoopNode(Node):
     def _send_sport_stop(self) -> None:
         if self.dry_run or self.sport_pub is None or self._sport_req_cls is None:
             return
-        req = self._sport_req_cls()
-        req.header.identity.api_id = SPORT_STOP_MOVE_ID
+        if _build_stop_move is not None:
+            req = _build_stop_move(self._sport_req_cls)
+        else:
+            req = self._sport_req_cls()
+            req.header.identity.api_id = SPORT_STOP_MOVE_ID
         self.sport_pub.publish(req)
 
     def _halt_output(self) -> None:
@@ -365,6 +385,7 @@ class LoopNode(Node):
             if self.stop_pub is not None:
                 self.stop_pub.publish(Int8(data=STOP_ALL))
             self._send_sport_stop()
+        self._cmu_active = False
 
     def _tick(self) -> None:
         now = self._now()
@@ -388,9 +409,12 @@ class LoopNode(Node):
         if self.planner == "cmu":
             cmd, cmu_out = step_cmu(
                 m, now, self._pose, oa, ca, front, near, obst,
-                pose_z=self._pose_z, was_running=(self._last_state == State.RUNNING))
+                pose_z=self._pose_z, was_running=self._cmu_active,
+                carrot_m=float(self.get_parameter("cmu_carrot_m").value),
+                pass_lateral=float(self.get_parameter("cmu_pass_lateral_m").value))
             if cmd.publish:
                 self._publish_cmu(cmu_out)
+            self._cmu_active = (cmu_out.waypoint is not None)
         else:
             if isinstance(m, ExploreMission):
                 cmd = m.step(now, self._pose, oa, ca, front, near, obst, self._turn_near)
@@ -442,7 +466,9 @@ class LoopNode(Node):
         if median(self._floor_hist) is None:
             problems.append("floor not found yet")
         front, near = self._counts(now)
-        if front >= k or near >= k:
+        # In CMU mode the local planner steers round the front lane (just as
+        # ~/resume already allows); only the clearance ring refuses a start.
+        if near >= k or (self.planner != "cmu" and front >= k):
             problems.append(f"path blocked (front={front}, near={near})")
         shape = str(g("shape"))
         local = []
@@ -487,6 +513,7 @@ class LoopNode(Node):
                 self.mission = Mission(to_world(start, local), start, now, self.follow, safety)
                 what = f"{len(local)} waypoints"
         self._last_state = None
+        self._cmu_active = False
         mode = "DRY RUN (nothing published)" if self.dry_run else "LIVE"
         res.success = True
         res.message = (f"started {mode}: {what} from "
