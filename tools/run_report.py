@@ -37,14 +37,15 @@ def parse_demolog(text: str) -> dict:
     """What a demo.sh log says about its run. Pure; missing bits are None."""
     r = {"what": None, "outcome": None, "finished_at": None, "started_at": None,
          "ended_at": None, "timeline": [], "pauses": [], "path_m": None, "gap_m": None,
-         "extent": None, "legs": None, "detours": 0, "mode": "route", "settings": []}
+         "extent": None, "legs": None, "detours": 0, "wifi_readings": None,
+         "wifi_ssids": None, "mode": "route", "settings": []}
     last = None
     for line in text.splitlines():
         if line.startswith("== LIVE run:") or line.startswith("== REHEARSAL"):
             r["what"] = r["what"] or line[3:].strip()
             if "explore" in line:
                 r["mode"] = "explore"
-        if line.strip().startswith(("route ", "explore:", "speed <=", "planner:")):
+        if line.strip().startswith(("route ", "explore:", "speed <=", "planner:", "scanning on ")):
             r["settings"].append(line.strip())
         m = REMOTE_START.search(line)
         if m and r["started_at"] is None:
@@ -77,6 +78,9 @@ def parse_demolog(text: str) -> dict:
         m = re.match(r"^extent\s+([\d.]+ x [\d.]+ m)", line)
         if m:
             r["extent"] = m.group(1)
+        m = re.search(r"(\d+) readings(?:,| across) (\d+) SSID", line)
+        if m:
+            r["wifi_readings"], r["wifi_ssids"] = int(m.group(1)), int(m.group(2))
     end = r["ended_at"] or r["finished_at"]          # stopped early: until it was stopped
     if r["started_at"] and end:
         d = _secs(end) - _secs(r["started_at"])
@@ -108,7 +112,8 @@ def _img(path: Path, mime: str):
     return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()
 
 
-def render(name: str, r: dict, floorplan=None, cam_start=None, cam_end=None) -> str:
+def render(name: str, r: dict, floorplan=None, cam_start=None, cam_end=None,
+           heatmap=None) -> str:
     e = html.escape
     label, cls = verdict(r["outcome"])
     nums = []
@@ -123,6 +128,8 @@ def render(name: str, r: dict, floorplan=None, cam_start=None, cam_end=None) -> 
         nums.append(("Legs explored", str(r["legs"])))
     if r.get("detours", 0) > 0:
         nums.append(("Detours", str(r["detours"])))
+    if r.get("wifi_readings") is not None:
+        nums.append(("WiFi readings", f"{r['wifi_readings']} ({r.get('wifi_ssids', 0)} SSIDs)"))
     if r["extent"]:
         nums.append(("Map size", r["extent"]))
     nums.append(("Pauses", str(len(r["pauses"]))))
@@ -141,6 +148,8 @@ def render(name: str, r: dict, floorplan=None, cam_start=None, cam_end=None) -> 
             for src, cap in ((cam_start, "at the start"), (cam_end, "at the end")) if src) + "</div>"
     plan = (f'<h2>Floorplan</h2><img class="plan" src="{floorplan}" alt="floorplan with the robot\'s path">'
             if floorplan else "<h2>Floorplan</h2><p>No floorplan was built for this run.</p>")
+    rf = (f'<h2>WiFi RF coverage</h2><img class="plan" src="{heatmap}" alt="WiFi RF coverage heatmap">'
+          if heatmap else "")
     settings = "".join(f"<li>{e(s)}</li>" for s in r["settings"])
 
     return f"""<!doctype html>
@@ -183,6 +192,7 @@ tr.done td:nth-child(2) {{ color:var(--ok); }}
 <span class="muted">&nbsp;{e(r["outcome"] or "")}</span>
 <div class="tiles">{tiles}</div>
 {plan}
+{rf}
 {pics}
 <h2>Pauses</h2><ul>{pauses}</ul>
 <h2>What happened when</h2><div class="wrap"><table>{rows}</table></div>
@@ -197,11 +207,13 @@ def build(run: Path) -> Path:
         raise FileNotFoundError(f"no run log {log}")
     r = parse_demolog(log.read_text(errors="replace"))
     out = run.with_name(run.name + "_report.html")
+    hm = _img(run.with_name(run.name + "_wifi-heatmap.png"), "image/png")
     out.write_text(render(
         run.name, r,
         floorplan=_img(run.with_name(run.name + "_map-topdown.png"), "image/png"),
         cam_start=_img(run.with_name(run.name + "_camera_start.jpg"), "image/jpeg"),
-        cam_end=_img(run.with_name(run.name + "_camera_end.jpg"), "image/jpeg")),
+        cam_end=_img(run.with_name(run.name + "_camera_end.jpg"), "image/jpeg"),
+        heatmap=hm),
         encoding="utf-8")
     return out
 

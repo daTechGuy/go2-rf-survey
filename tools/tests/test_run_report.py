@@ -116,6 +116,19 @@ class TestRender(unittest.TestCase):
             self.assertIn("Completed", page)
             self.assertNotIn("Robot camera", page)       # no camera stills this run
 
+    def test_wifi_heatmap_embedded_and_readings_parsed(self):
+        with tempfile.TemporaryDirectory() as d:
+            run = Path(d) / "rfwalk_20261115_120000"
+            log = ROUTE + "  18 readings, 3 SSID(s), 6 position(s) -> /surveys/rfwalk_wifi-heatmap.png\n"
+            run.with_name(run.name + ".demolog").write_text(log)
+            run.with_name(run.name + "_map-topdown.png").write_bytes(b"\x89PNG fake map")
+            run.with_name(run.name + "_wifi-heatmap.png").write_bytes(b"\x89PNG fake wifi")
+            out = build(run)
+            page = out.read_text(encoding="utf-8")
+            self.assertIn("WiFi readings", page)
+            self.assertIn("18 (3 SSIDs)", page)
+            self.assertIn("WiFi RF coverage", page)
+
     def test_missing_log(self):
         with tempfile.TemporaryDirectory() as d:
             with self.assertRaises(FileNotFoundError):

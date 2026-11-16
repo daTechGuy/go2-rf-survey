@@ -24,6 +24,11 @@ if [ -n "${DETACH:-}" ]; then
     go2rec)
       bag=$(echo "$cmd" | sed -n 's#.*-o /surveys/\([^ ]*\) .*#\1#p')
       mkdir -p "$SURV/$bag"; echo fake > "$SURV/$bag/${bag}_0.db3" ;;
+    go2wifi)
+      wiface=$(echo "$cmd" | sed -n 's#.*interface:=\([^ ]*\).*#\1#p')
+      wcsv=$(echo "$cmd" | sed -n 's#.*output_csv:=/surveys/\([^ >]*\).*#\1#p')
+      printf "timestamp,x,y,z,frame_id,bssid,ssid,freq_mhz,band,rssi_dbm\n1.0,0.0,0.0,0.0,odom,aa:bb:cc:dd:ee:01,CampusWiFi,5180,5,-52.0\n" > "$SURV/$wcsv"
+      echo "scanning on $wiface every 1.0 s (min move 0.5 m) -> /surveys/$wcsv" > "$SURV/go2wifi.log" ;;
   esac
   exit 0
 fi
@@ -33,7 +38,17 @@ case "$cmd" in
     bag=$(basename "$(echo "$cmd" | awk '{print $NF}')")
     ev "floorplan $bag"
     echo "fake" > "$SURV/${bag}_map-topdown.png"
+    echo "image: ${bag}_map.pgm" > "$SURV/${bag}_map.yaml"
     echo "wrote /surveys/${bag}_map-topdown.png" ;;
+  *heatmap.py*)
+    csv=$(echo "$cmd" | sed -n 's#.*heatmap.py[[:space:]]*\([^ ]*\).*#\1#p')
+    stem=$(basename "${csv%.csv}")
+    ev "heatmap $stem"
+    echo "fake png" > "$SURV/${stem}-heatmap.png"
+    echo "  12 readings, 2 SSID(s), 4 position(s) -> /surveys/${stem}-heatmap.png" ;;
+  *go2_survey_wifi.scanner*)
+    ev "wifi-check"
+    echo "2 BSS(es) on wlan0" ;;
   *front_camera.py*--once*)
     # go2loop.sh camera-snap / camera-check: one still (demo.sh's report pictures)
     shot=$(echo "$cmd" | sed -n 's#.*--once /surveys/\([^ "]*\).*#\1#p')

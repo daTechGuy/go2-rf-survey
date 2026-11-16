@@ -67,12 +67,59 @@ class ScanError(RuntimeError):
 
 # ``BSS aa:bb:cc:dd:ee:ff(on wlan1)`` -- optionally followed by ``-- associated``
 _RE_BSS = re.compile(r"^BSS\s+([0-9a-fA-F:]{17})\b")
+_RE_CONNECTED = re.compile(r"^Connected to\s+([0-9a-fA-F:]{17})\b")
+_RE_IFACE = re.compile(r"^\s*Interface\s+(\S+)\s*$")
 _RE_FREQ = re.compile(r"^\s*freq:\s*(\d+)(?:\.\d+)?\s*$")
 _RE_SIGNAL = re.compile(r"^\s*signal:\s*(-?\d+(?:\.\d+)?)\s*dBm")
 # SSID may be empty (hidden network) or absent entirely.
 _RE_SSID = re.compile(r"^\s*SSID:\s?(.*)$")
 # Some iw versions report the frequency inside the DS Parameter set instead.
 _RE_DS_CHAN = re.compile(r"^\s*DS Parameter set:\s*channel\s*(\d+)")
+
+
+def parse_iw_dev(text: str) -> list[str]:
+    """Extract wireless interface names from ``iw dev`` output."""
+    out: list[str] = []
+    for line in text.splitlines():
+        m = _RE_IFACE.match(line)
+        if m:
+            name = m.group(1)
+            if name not in out:
+                out.append(name)
+    return out
+
+
+def choose_interface(interfaces: Iterable[str]) -> str | None:
+    """Pick the best default survey interface from ``iw dev`` names.
+
+    Prefers a dedicated USB adapter (``wlan1``, ``wlx*``) over the Jetson's
+    onboard ``wlan0`` when both exist, ignoring ``p2p-dev-*`` pseudo-interfaces.
+    """
+    names = [n for n in interfaces if not n.startswith("p2p-dev-")]
+    if not names:
+        return None
+    for n in names:
+        if n != "wlan0" and (n.startswith("wlan") or n.startswith("wlx") or n.startswith("wl")):
+            return n
+    return names[0]
+
+
+def resolve_interface(interface: str = "auto") -> str:
+    """Resolve ``'auto'`` (or empty) to a real wireless interface via ``iw dev``."""
+    if interface and interface != "auto":
+        return interface
+    if shutil.which(IW_BINARY) is None:
+        raise ScanError(
+            f"{IW_BINARY!r} not found on PATH. Install it with: "
+            "sudo apt install iw"
+        )
+    proc = subprocess.run(
+        [IW_BINARY, "dev"], capture_output=True, text=True, timeout=5.0, check=False
+    )
+    chosen = choose_interface(parse_iw_dev(proc.stdout or ""))
+    if not chosen:
+        raise ScanError("no wireless interfaces found by 'iw dev'")
+    return chosen
 
 
 def _channel_to_freq(channel: int) -> int | None:
@@ -84,6 +131,36 @@ def _channel_to_freq(channel: int) -> int | None:
     if 32 <= channel <= 177:
         return 5000 + 5 * channel
     return None
+
+
+def parse_iw_link(text: str) -> list[Observation]:
+    """Parse ``iw dev <iface> link`` output for the currently associated AP."""
+    bssid: str | None = None
+    ssid: str | None = None
+    freq: int | None = None
+    rssi: float | None = None
+    for line in text.splitlines():
+        m = _RE_CONNECTED.match(line)
+        if m:
+            bssid = m.group(1).lower()
+            continue
+        if bssid is None:
+            continue
+        m = _RE_FREQ.match(line)
+        if m:
+            freq = int(m.group(1))
+            continue
+        m = _RE_SIGNAL.match(line)
+        if m:
+            rssi = float(m.group(1))
+            continue
+        m = _RE_SSID.match(line)
+        if m:
+            ssid = m.group(1).rstrip("\n")
+            continue
+    if bssid is not None and freq is not None and rssi is not None:
+        return [Observation(bssid=bssid, ssid=ssid or "", freq_mhz=freq, rssi_dbm=rssi)]
+    return []
 
 
 def parse_iw_scan(text: str) -> list[Observation]:
@@ -185,19 +262,22 @@ def scan(
             f"{IW_BINARY!r} not found on PATH. Install it with: "
             "sudo apt install iw"
         )
+    interface = resolve_interface(interface)
 
-    cmd = [IW_BINARY, "dev", interface, "scan"]
-    if use_sudo:
-        cmd.insert(0, "sudo")
-
-    try:
-        proc = subprocess.run(
+    def _run_iw(*args: str) -> subprocess.CompletedProcess:
+        cmd = [IW_BINARY, "dev", interface, *args]
+        if use_sudo:
+            cmd.insert(0, "sudo")
+        return subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout_s,
             check=False,
         )
+
+    try:
+        proc = _run_iw("scan")
     except subprocess.TimeoutExpired as exc:
         raise ScanError(
             f"scan on {interface} exceeded {timeout_s}s. A dual-band sweep "
@@ -205,10 +285,19 @@ def scan(
             "happens consistently."
         ) from exc
 
+    observations: list[Observation] = []
     if proc.returncode != 0:
         err = (proc.stderr or "").strip()
-        # The two failures worth naming, because both have specific fixes
-        # and neither is obvious from iw's own message.
+        # When the adapter is associated to the hotspot (go2w) or
+        # NetworkManager is mid-scan, active trigger returns -16 (busy) or -1
+        # (unprivileged). Fall back to cached scan dump + live link RSSI so
+        # the survey keeps recording without dropping the SSH link.
+        if "Device or resource busy" in err or "(-16)" in err or "Operation not permitted" in err:
+            dump = _run_iw("scan", "dump")
+            link = _run_iw("link")
+            observations = parse_iw_scan(dump.stdout or "") + parse_iw_link(link.stdout or "")
+            if observations or dump.returncode == 0:
+                return dedupe_strongest(observations)
         if "Operation not permitted" in err:
             raise ScanError(
                 f"scan on {interface} needs CAP_NET_ADMIN. Either run with "
@@ -222,7 +311,14 @@ def scan(
             )
         raise ScanError(f"iw scan on {interface} failed (rc={proc.returncode}): {err}")
 
-    return dedupe_strongest(parse_iw_scan(proc.stdout))
+    observations = parse_iw_scan(proc.stdout)
+    try:
+        link = _run_iw("link")
+        if link.returncode == 0:
+            observations.extend(parse_iw_link(link.stdout or ""))
+    except subprocess.TimeoutExpired:
+        pass
+    return dedupe_strongest(observations)
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -232,7 +328,10 @@ def _main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Run one WiFi scan sweep and print what was heard."
     )
-    ap.add_argument("interface", help="scanning interface, e.g. wlan1")
+    ap.add_argument(
+        "interface", nargs="?", default="auto",
+        help="scanning interface, e.g. wlan1 (default: auto-detect via iw dev)"
+    )
     ap.add_argument("--sudo", action="store_true", help="invoke iw via sudo")
     ap.add_argument(
         "--timeout", type=float, default=DEFAULT_SCAN_TIMEOUT_S, metavar="S"
@@ -240,15 +339,17 @@ def _main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     try:
-        results = scan(args.interface, timeout_s=args.timeout, use_sudo=args.sudo)
+        iface = resolve_interface(args.interface)
+        results = scan(iface, timeout_s=args.timeout, use_sudo=args.sudo)
     except ScanError as exc:
         print(f"scan failed: {exc}")
         return 1
 
     if not results:
-        print("scan succeeded but heard nothing (valid result: no coverage)")
+        print(f"interface {iface}: scan succeeded but heard nothing (valid result: no coverage)")
         return 0
 
+    print(f"interface: {iface}")
     print(f"{'RSSI':>7}  {'BAND':>4}  {'FREQ':>5}  {'BSSID':<17}  SSID")
     for o in results:
         label = o.ssid or "<hidden>"

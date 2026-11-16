@@ -73,7 +73,7 @@ before() {  # before A B: event A logged before event B
   b=$(grep -n -- "$2" "$FAKE/events.log" | head -1 | cut -d: -f1)
   [ -n "$a" ] && [ -n "$b" ] && [ "$a" -lt "$b" ]
 }
-cleaned() { stopped go2loop && stopped go2remote && stopped go2rec && stopped go2bridge; }
+cleaned() { stopped go2loop && stopped go2remote && stopped go2rec && stopped go2bridge && stopped go2wifi; }
 stage1() { python -c "import json,time; print(json.dumps({'epoch': time.time(), 'backend': 'sport'}))" > "$HOME/surveys/.stage1_pass"; }
 stage2() { python -c "import json,time; print(json.dumps({'epoch': time.time(), 'backend': 'sport'}))" > "$HOME/surveys/.stage2_pass"; }
 results() { g results > "$FAKE/results.out"; cat "$FAKE/results.out"; }
@@ -382,6 +382,28 @@ if scenario 21 "CMU mode (--cmu): checks stack, skips go2bridge, stops CMU on ex
   check "order: service stop before cmu stop" before 'service stop' 'cmu stop'
   check "order: cmu stop before loop down"    before 'cmu stop' 'stop go2loop'
   check "Stage 2 recorded for cmu"        has "$HOME/surveys/.stage2_pass" '"cmu"'
+  showif "$f0"
+fi
+
+if scenario 22 "WiFi survey (--wifi): logs CSV, closes cleanly, renders heatmap into report"; then
+  echo "== $CUR"; fresh 22; f0=$FAILS
+  stage1
+  demo --length 1.0 --i-confirm-breathing --wifi wlan1 --name rfwalk --remote-start --detach
+  check "allowed with Stage 1"            has "$FAKE/parent.out" 'SAFE TO UNPLUG'
+  check "go2wifi container started"       running go2wifi
+  check "wifi log shows wlan1"            has "$HOME/surveys/go2wifi.log" 'scanning on wlan1'
+  hold $START 2.2
+  check "demo finishes"                   wait_demo 40
+  check "finished: done"                  has "$(dlog)" 'demo finished: done'
+  check "go2wifi stopped with SIGINT"     has "$FAKE/events.log" 'kill-INT go2wifi'
+  check "order: loop down before wifi INT" before 'stop go2loop' 'kill-INT go2wifi'
+  check "heatmap rendered"                has "$FAKE/events.log" 'heatmap rfwalk_.*_wifi'
+  check "report embeds WiFi RF coverage"  has "$(ls -t "$HOME"/surveys/rfwalk_*_report.html | head -1)" 'WiFi RF coverage'
+  check "report shows WiFi readings tile" has "$(ls -t "$HOME"/surveys/rfwalk_*_report.html | head -1)" '12 \(2 SSIDs\)'
+  results >/dev/null
+  check "results: heatmap scp line"       has "$FAKE/results.out" 'heatmap: .*scp go2:surveys/rfwalk_.*_wifi-heatmap.png'
+  check "cleaned up"                      cleaned
+  check "no unhandled fake calls"         test ! -s "$FAKE/unhandled"
   showif "$f0"
 fi
 

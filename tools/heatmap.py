@@ -321,8 +321,9 @@ def main() -> int:
     panels: list[tuple[str, list[dict], bool]] = [
         ("Best signal, any network", list(best_any.values()), True)
     ]
+    min_needed = min(args.min_samples, max(1, len(best_any) // 2))
     for ssid, srows in sorted(by_ssid.items(), key=lambda kv: -len(kv[1])):
-        if len(srows) < args.min_samples:
+        if len(srows) < min_needed:
             print(f"  skip {ssid!r}: only {len(srows)} readings")
             continue
         panels.append((ssid, srows, False))

@@ -237,6 +237,40 @@ case "${1:-}" in
       "$SRC; python3 -u /workspace/tools/cmu_ctl.py $sub $*" \
       2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
     ;;
+  wifi-check)
+    IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
+      "PYTHONPATH=/workspace/go2_survey_wifi:\$PYTHONPATH python3 -u -m go2_survey_wifi.scanner ${2:-auto}" \
+      2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
+    ;;
+  wifi-up)
+    wiface="${2:-auto}"
+    wcsv="${3:-wifi_survey.csv}"
+    docker rm -f go2wifi >/dev/null 2>&1
+    mkdir -p "${HOME}/surveys"
+    : > "${HOME}/surveys/go2wifi.log"
+    DETACH=go2wifi IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
+      "$SRC; PYTHONPATH=/workspace/go2_survey_wifi:\$PYTHONPATH exec python3 -u -m go2_survey_wifi.survey_node --ros-args -p interface:=$wiface -p output_csv:=/surveys/$wcsv > /surveys/go2wifi.log 2>&1" \
+      >/dev/null || { echo "failed to start WiFi survey container" >&2; exit 1; }
+    sleep 3
+    if docker ps --filter "name=^go2wifi$" --format '{{.Names}}' | grep -q .; then
+      show_log "${HOME}/surveys/go2wifi.log" 5
+    else
+      echo "WiFi survey exited:"; tail -n 20 "${HOME}/surveys/go2wifi.log"; exit 1
+    fi
+    ;;
+  wifi-log)
+    show_log "${HOME}/surveys/go2wifi.log" "${2:-20}"
+    ;;
+  wifi-down)
+    if docker ps --filter "name=^go2wifi$" --format '{{.Names}}' | grep -q .; then
+      docker kill -s INT go2wifi >/dev/null 2>&1
+      timeout 15 docker wait go2wifi >/dev/null 2>&1
+      docker rm -f go2wifi >/dev/null 2>&1
+      show_log "${HOME}/surveys/go2wifi.log" 3
+    else
+      echo "WiFi survey not running"
+    fi
+    ;;
   state-watch)
     IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
       "$SRC; python3 -u /workspace/tools/state_watch.py ${*:2}" \
@@ -332,6 +366,8 @@ case "${1:-}" in
       [ -f "$d.demolog" ] && echo "    log:      scp go2:surveys/$b.demolog ."
       [ -f "${d}_report.html" ] && echo "    report:    scp go2:surveys/${b}_report.html ."
       [ -f "${d}_map-topdown.png" ] && echo "    floorplan: scp go2:surveys/${b}_map-topdown.png ."
+      [ -f "${d}_wifi-heatmap.png" ] && echo "    heatmap:   scp go2:surveys/${b}_wifi-heatmap.png ."
+      [ -f "${d}_wifi.csv" ] && echo "    wifi csv:  scp go2:surveys/${b}_wifi.csv ."
       echo "    whole run: scp -r go2:surveys/$b* ."
       n=$((n + 1)); [ "$n" -ge "${2:-5}" ] && break
     done

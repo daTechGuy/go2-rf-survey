@@ -17,7 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from go2_survey_wifi.scanner import (  # noqa: E402
     Observation,
+    choose_interface,
     dedupe_strongest,
+    parse_iw_dev,
+    parse_iw_link,
     parse_iw_scan,
 )
 
@@ -197,6 +200,63 @@ class TestDedupe(unittest.TestCase):
 
     def test_empty_in_empty_out(self) -> None:
         self.assertEqual(dedupe_strongest([]), [])
+
+
+FIXTURE_IW_DEV = """\
+phy#1
+	Interface wlx88366cf9a1b2
+		ifindex 5
+		wdev 0x100000001
+		addr 88:36:6c:f9:a1:b2
+		type managed
+		channel 36 (5180 MHz), width: 80 MHz, center1: 5210 MHz
+phy#0
+	Interface p2p-dev-wlan0
+		wdev 0x2
+		type P2P-device
+	Interface wlan0
+		ifindex 3
+		wdev 0x1
+		addr aa:bb:cc:dd:ee:00
+		ssid RobotHotspot
+		type AP
+"""
+
+FIXTURE_IW_LINK = """\
+Connected to de:ad:be:ef:00:01 (on wlx88366cf9a1b2)
+	SSID: LaptopHotspot
+	freq: 5180
+	RX: 42310 bytes (312 packets)
+	TX: 19844 bytes (198 packets)
+	signal: -48 dBm
+	rx bitrate: 433.3 MBit/s VHT-MCS 9 80MHz short GI VHT-NSS 1
+"""
+
+
+class TestInterfaceDiscovery(unittest.TestCase):
+    def test_parses_interfaces(self) -> None:
+        devs = parse_iw_dev(FIXTURE_IW_DEV)
+        self.assertEqual(devs, ["wlx88366cf9a1b2", "p2p-dev-wlan0", "wlan0"])
+
+    def test_prefers_usb_managed_over_builtin_ap(self) -> None:
+        devs = parse_iw_dev(FIXTURE_IW_DEV)
+        self.assertEqual(choose_interface(devs), "wlx88366cf9a1b2")
+
+    def test_falls_back_to_wlan0_ignoring_p2p_dev(self) -> None:
+        self.assertEqual(choose_interface(["p2p-dev-wlan0", "wlan0"]), "wlan0")
+
+
+class TestIwLinkFallback(unittest.TestCase):
+    def test_parses_connected_link(self) -> None:
+        obs = parse_iw_link(FIXTURE_IW_LINK)
+        self.assertEqual(len(obs), 1)
+        self.assertEqual(obs[0].bssid, "de:ad:be:ef:00:01")
+        self.assertEqual(obs[0].ssid, "LaptopHotspot")
+        self.assertEqual(obs[0].freq_mhz, 5180)
+        self.assertEqual(obs[0].rssi_dbm, -48.0)
+
+    def test_not_connected_returns_empty(self) -> None:
+        self.assertEqual(parse_iw_link("Not connected.\n"), [])
 
 
 if __name__ == "__main__":

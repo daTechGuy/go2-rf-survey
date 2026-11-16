@@ -16,6 +16,8 @@
 #                   the built-in LiDAR stays the one that must be fresh
 #   --cmu           drive via the CMU autonomy stack (/way_point + /stop, D5)
 #                   instead of go2_survey_bridge
+#   --wifi [IFACE]  record WiFi RSSI along the walk and render
+#                   <run>_wifi-heatmap.png over the floorplan (default: auto)
 #
 # Options: --shape out_and_back|rectangle  --width W --turn left|right (rectangle)
 #          --backend sport|sport_prep|avoid  --name NAME  --no-viz  --no-map
@@ -52,6 +54,7 @@ G="bash $REPO/tools/go2loop.sh"
 
 LENGTH=""; WIDTH=""; SHAPE=out_and_back; TURN=left; BACKEND=sport; NAME=demo
 EXPLORE=0; LEGS=8; RADIUS=4.0; LEG_MAX=1.5; MINUTES=5; STRATEGY=frontier; MID360=0; CMU=0
+WIFI=0; WIFI_IFACE=auto
 BREATHING=0; REHEARSE=0; VIZ=1; MAP=1; SKIP_GATE=0
 DETACH_RUN=0; REMOTE=0; WAIT=600
 ARGS=("$@")
@@ -73,6 +76,9 @@ while [ $# -gt 0 ]; do
     --strategy) STRATEGY="$2"; shift 2 ;;
     --mid360) MID360=1; shift ;;
     --cmu) CMU=1; BACKEND=cmu; shift ;;
+    --wifi)
+      WIFI=1
+      if [ $# -ge 2 ] && [[ "$2" != -* ]]; then WIFI_IFACE="$2"; shift 2; else shift; fi ;;
     --backend) BACKEND="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
     --i-confirm-breathing) BREATHING=1; shift ;;
@@ -180,6 +186,7 @@ cleanup() {
   if [ "$STARTED_BRIDGE" = 1 ]; then $G bridge-down; fi   # 2. StopMove + hand back
   $G down >/dev/null 2>&1                       # 3. loop node
   [ "$MID360" = 1 ] && $G mid360-down >/dev/null 2>&1   # 3b. the second LiDAR
+  [ "$WIFI" = 1 ] && $G wifi-down >/dev/null 2>&1       # 3c. flush & close WiFi CSV
   if docker ps --filter "name=^go2rec$" --format '{{.Names}}' | grep -q .; then
     docker kill -s INT go2rec >/dev/null 2>&1   # 4. SIGINT: ros2 bag closes cleanly
     timeout 30 docker wait go2rec >/dev/null 2>&1
@@ -220,6 +227,11 @@ DETACH=go2rec IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" bash -c \
 sleep 3
 # a still from the front camera for the report (best-effort: no camera, no picture)
 $G camera-snap "${BAG}_camera_start.jpg" >/dev/null 2>&1 || true
+
+if [ "$WIFI" = 1 ]; then
+  echo "== WiFi RF survey ($WIFI_IFACE -> ~/surveys/${BAG}_wifi.csv)"
+  $G wifi-up "$WIFI_IFACE" "${BAG}_wifi.csv" || bail "WiFi survey did not start"
+fi
 
 if [ "$REHEARSE" = 0 ]; then
   if [ "$CMU" = 0 ]; then
@@ -334,6 +346,15 @@ if [ "$MAP" = 1 ]; then
   IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" python3 /workspace/tools/bag_to_map.py "${MAP_ARGS[@]}" \
     2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2|^\s+[0-9]+ scans read'
   echo "   on the laptop:  scp go2:surveys/${BAG}_map-topdown.png ."
+fi
+if [ "$WIFI" = 1 ] && [ -s "$HOME/surveys/${BAG}_wifi.csv" ]; then
+  echo "== WiFi heatmap"
+  HM_ARGS=("/surveys/${BAG}_wifi.csv" --out /surveys)
+  [ -f "$HOME/surveys/${BAG}_map.yaml" ] && HM_ARGS+=(--map "/surveys/${BAG}_map.yaml")
+  IFACE="${IFACE:-eth0}" bash "$REPO/docker/run.sh" python3 /workspace/tools/heatmap.py "${HM_ARGS[@]}" \
+    2>&1 | grep -v -E '^(image|interface|repo|surveys) |^$|^WARN|unitree_ros2'
+  [ -s "$HOME/surveys/${BAG}_wifi-heatmap.png" ] && \
+    echo "   on the laptop:  scp go2:surveys/${BAG}_wifi-heatmap.png ."
 fi
 if [ "$REHEARSE" = 1 ] && [ "$state" != aborted ]; then
   # a dry run never reaches a waypoint, so it ends on the 15 s limit, still "running"

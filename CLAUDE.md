@@ -177,7 +177,7 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
   Windows repo).
 - **Shell flows get the fake robot.** After changing `demo.sh`, `go2loop.sh`
   or `remote_trigger.py`, run `bash tools/fake_robot/run.sh` (Git Bash on the
-  laptop, ~5 min, 21 scenarios / 116 checks): real scripts against fake
+  laptop, ~5 min, 22 scenarios / 129 checks): real scripts against fake
   docker/ROS/remote. It found a pipefail bug that made a healthy `bridge-up`
   report failure.
 - **Placeholders are marked loudly.** `config/mount.yaml` and
@@ -212,12 +212,12 @@ Full reasoning in [`docs/plan.md`](docs/plan.md).
 ## Layout
 
 ```
-go2_survey_wifi/         scan + pose join → CSV          ✅ 18 tests
+go2_survey_wifi/         scan + pose join → CSV          ✅ 23 tests (wired via demo.sh --wifi)
 go2_survey_bridge/       /cmd_vel → sport mode           ✅ tested
 go2_survey_loop/         autonomous route + obstacle stop ✅ tested
 go2_survey_description/  TF frames, 22° LiDAR mount      ✅ 21 geometry tests
 tools/                   post-processing + on-robot scripts (go2loop.sh, demo.sh); fake_robot/
-docker/                  Humble container for the Jetson
+docker/                  Humble container for the Jetson (--cap-add=NET_ADMIN for iw scan)
 config/                  mount, MID360, FAST-LIO2 params
 docs/                    field-guide/, autonomous-loop, live-view, RUNBOOK, HARDWARE, BUILD_PLAN, plan
 ```

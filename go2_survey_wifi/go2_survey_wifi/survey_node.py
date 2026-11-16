@@ -147,6 +147,11 @@ class WifiSurveyNode(Node):
         self._odom_pose = (p.x, p.y, p.z, yaw_from_quaternion(q.x, q.y, q.z, q.w))
         self._odom_t = self.get_clock().now().nanoseconds * 1e-9
 
+    def _on_fallback_odom(self, msg: Odometry) -> None:
+        now_s = self.get_clock().now().nanoseconds * 1e-9
+        if self._odom_t is None or now_s - self._odom_t > self.max_tf_age_s:
+            self._on_odom(msg)
+
     def _lookup_pose(self, when) -> tuple[float, float, float, float] | None:
         """Pose at ``when``, or None if neither TF nor odom_topic can supply a
         usable one.

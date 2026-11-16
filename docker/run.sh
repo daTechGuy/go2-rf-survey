@@ -47,6 +47,8 @@ ARGS=(
   # networking silently yields zero topics -- this is not optional.
   --network host
   --ipc host
+  # CAP_NET_ADMIN is required by nl80211 (`iw dev <iface> scan`).
+  --cap-add=NET_ADMIN
   # USB hotplug for the RealSense. Without this the D435i disappears from
   # the container whenever it re-enumerates.
   -v /dev:/dev

@@ -318,7 +318,7 @@ def main() -> int:
 
     if not frames:
         raise SystemExit("no clouds read from the bag")
-    world = {"odom", "map", "world"}
+    world = {"odom", "map", "world", "camera_init"}
     if not frames <= world and not args.force:
         raise SystemExit(
             f"clouds are in frame(s) {sorted(frames)}, not a world-fixed frame. "
