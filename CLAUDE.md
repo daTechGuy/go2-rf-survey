@@ -159,13 +159,35 @@ table): the transform node starved the IMU; the map floor was tilted 24 deg;
 frame (cloud-only yaw correction). S2 IMU calibration done. After all four a
 walk matches the Go2's leg odometry (heading within 1.5 deg, lag under 1 s,
 no wander at rest, height flat) and the planner's path bends round a chair
-2 m ahead (chair test passed, no motion). Open: SLAM reads ~15-20% more
-distance than leg odometry (tape measure before S3). The stack on the robot
-runs with **`is_real_robot` false** (cannot move it); flip it only for S3.
+2 m ahead (chair test passed, no motion). **Distance check, 10 ft marks
+(3.05 m), one straight walk:** leg odometry 2.88 m (-6%), SLAM 3.38 m (+11%);
+earlier walks gave SLAM/leg 1.15-1.2 too. SLAM over-reads, so a goal is
+reached about 0.3 m early (fails safe). Cause unknown (likely weak
+along-track constraint: the L1 sees mostly floor, accelerometer zeroed; or the
+lighter Point-LIO settings). **Pending: repeat with a laser tape measure**
+(two or three straight walks at different lengths, e.g. 2 m, 3 m, 6 m, to tell
+a scale error from an offset; start/end read 8 s after stopping, with
+`dual_odometry_record.py`); add a scale in `cmu.py` only if consistent. The
+stack on the robot runs with **`is_real_robot` false** (cannot move it); flip
+it only for S3.
+
+**S3 prep status (2026-11-19, not started):** plan, in this order. (1) Chair
+1.5 m ahead of the robot standing still, then restart the stack there (the map
+origin is the pose at start, so `cmu-goal 3.0 0.0` is 3 m ahead only if the
+robot has not moved since). (2) `lag_check.py`: pose lag under ~1.5 s and not
+growing. (3) `cmu-check --live` after the `is_real_robot` flip must say READY.
+(4) Flip `is_real_robot` true in `local_planner.launch` only on the user's
+explicit go; 0.3 m/s; L2+B in hand and `go2loop.sh cmu-stop` ready (stop with
+`cmu-stop` first, only then kill the launch: it is unknown whether the Go2 keeps
+walking on the last `Move` if the stack dies). (5) Expect the follower to slow
+to 0.2 m/s inside 0.75 m of the goal (the Go2's forward sway zone), so a stall
+short of the goal is not a failure: the pass is curving round the chair
+without stopping. Idea not built: a native guard that auto-stops on lag, travel
+or SLAM/leg-odometry divergence (keep the decision logic pure and unit-tested).
 The patches and calibration files live on the robot, outside this repo:
 re-apply them after any re-clone.
 
-**Next action:** tape-measure check of SLAM distance, then S3 (`go2loop.sh cmu-goal 3.0 0.0`, **set `is_real_robot` true first, ask**; chair 1.5 m ahead, 0.3 m/s, L2+B and `cmu-stop` ready), S4 (`demo.sh --cmu`). Then `python tools\get_results.py` on the laptop.
+**Next action:** laser-tape check of SLAM distance (user has one coming), then S3 (`go2loop.sh cmu-goal 3.0 0.0`, **set `is_real_robot` true first, ask**; chair 1.5 m ahead, 0.3 m/s, L2+B and `cmu-stop` ready), S4 (`demo.sh --cmu`). Then `python tools\get_results.py` on the laptop.
 Then the 3 m route / classroom (guide 02). Each session:
 route (user sudo) → preflight → `bridge-up` + `turn-test --i-confirm-breathing`
 (defaults to the 1.0 rad/s × 0.5 s turn that passes) → [ASK] demo. Robot-side

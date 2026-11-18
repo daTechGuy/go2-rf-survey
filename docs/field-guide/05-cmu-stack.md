@@ -109,6 +109,19 @@ is true): flip it only for S3.
 **S2 — IMU calibration (MOVES: 20 s spin).** Done 2026-11-19 (this robot:
 `ang_z2x_proj` 0.134, `ang_z2y_proj` -0.195).
 
+**Before S3 (checked 2026-11-19, S3 not run):** SLAM over-reads distance by
+about 11% against a 10 ft (3.05 m) mark (leg odometry reads 6% short), so the
+follower believes it has arrived about 0.3 m early: it fails safe. Repeat that
+check with a laser tape (two or three lengths) before trusting distances.
+Restart the stack with the robot standing still in the place it will start, with
+the chair in front: the map origin is the pose at start, so `cmu-goal 3.0 0.0`
+means 3 m ahead only if the robot has not moved since. Pose lag
+(`tools/cmu_patches/lag_check.py`) under about 1.5 s and not growing; then flip
+`is_real_robot` (see the patches README) only on the user's go. Expect the
+follower to slow to 0.2 m/s inside 0.75 m of the goal (the Go2's forward sway
+zone): a stall short of the goal is not a failure, the pass is curving round
+the chair without stopping.
+
 **S3 — first autonomous goal (MOVES).** Chair 1.5 m ahead, one waypoint
 3 m ahead behind it (`bash ~/go2-rf-survey/tools/go2loop.sh cmu-goal 3.0 0.0`
 sets `/stop 0` and publishes `/way_point`), 0.3 m/s,
