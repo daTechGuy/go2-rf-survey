@@ -47,7 +47,7 @@ from std_srvs.srv import Trigger
 
 from go2_survey_loop.cmu import (
     CARROT_M, PASS_LATERAL_M, SENSOR_OFFSET_X, SPORT_STOP_MOVE_ID, STOP_ALL,
-    step_cmu, vehicle_pose,
+    effective_cloud_stride, step_cmu, vehicle_pose,
 )
 from go2_survey_loop.explore import ExploreMission, ExploreParams
 from go2_survey_loop.route import DetourParams, RouteMission
@@ -172,7 +172,7 @@ class LoopNode(Node):
             body_half_width=g("body_half_width"), stop_distance=g("stop_distance"),
             lane_half_width=g("lane_half_width"), clearance_radius=g("clearance_radius"),
             z_min=g("obstacle_z_min"), z_max=g("obstacle_z_max"))
-        self.stride = int(g("cloud_stride"))
+        self.stride = effective_cloud_stride(self.planner, int(g("cloud_stride")))
 
         self._pose: Pose2D | None = None
         self._pose_z: float = 0.0

@@ -182,7 +182,23 @@ explicit go; 0.3 m/s; L2+B in hand and `go2loop.sh cmu-stop` ready (stop with
 walking on the last `Move` if the stack dies). (5) Expect the follower to slow
 to 0.2 m/s inside 0.75 m of the goal (the Go2's forward sway zone), so a stall
 short of the goal is not a failure: the pass is curving round the chair
-without stopping. Idea not built: a native guard that auto-stops on lag, travel
+without stopping. **S4 rehearsal run (`demo.sh --cmu --length 1.0 --rehearse`,
+dry, nothing moved) found three things:** (a) `tools/unitree_rpc.py` called
+`Subscription.get_publisher_count()`, which rclpy does not have: the preflight
+crashed (probably the "CheckMode fails on the first arm" note above); fixed
+with `node.count_publishers`. (b) the loop refused every start, "no fresh
+LiDAR (never received)": `/registered_scan` now holds only ~250 points a scan
+(the lighter Point-LIO settings), the loop's stride 4 left ~20 within 2 m, under
+the 50 `floor_from_scan` needs; fixed (`effective_cloud_stride`: stride 1 for
+the CMU planner). (c) **open:** the mission then pauses at start, "odometry
+stale" (odom 0.38 -> 0.58 s old, limit 0.5 s) and stays paused until
+`resume`: the loop container is starved (load ~8 on 4 cores at 15 W, with
+Point-LIO, the transform node, the bag recorder and the live view). Safe, but
+S4 will not start by itself. Options (user's call): a higher Jetson power mode
+(`nvpmodel`, a system setting), fewer containers during a run, or a longer
+`odom_timeout_s` for CMU. `assess_cmu(sensing_only)` also now fails if
+`is_real_robot` is true (a rehearsal would have walked the robot).
+Idea not built: a native guard that auto-stops on lag, travel
 or SLAM/leg-odometry divergence (keep the decision logic pure and unit-tested).
 The patches and calibration files live on the robot, outside this repo:
 re-apply them after any re-clone.

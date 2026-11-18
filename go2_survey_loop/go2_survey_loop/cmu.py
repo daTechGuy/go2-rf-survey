@@ -234,6 +234,20 @@ def step_cmu(mission: Mission | RouteMission | ExploreMission,
     return cmd, out
 
 
+def effective_cloud_stride(planner: str, requested: int) -> int:
+    """Point stride the loop applies to its cloud.
+
+    With the CMU planner the cloud is Point-LIO's ``/registered_scan``, which is
+    already thinned (voxel filter and point skipping: only ~250 points a scan
+    with the lighter settings that keep the pose real-time on 4 cores). The
+    default stride of 4 on top of that left ~20 points within 2 m, under the 50
+    ``floor_from_scan`` needs: the loop never found the floor, never counted a
+    scan as received, and refused every start ("no fresh LiDAR (never
+    received)"). So use every point.
+    """
+    return 1 if planner == "cmu" else max(1, int(requested))
+
+
 def assess_cmu(snap: dict, sensing_only: bool = True) -> tuple[bool, list[str]]:
     """Judge a snapshot of the CMU stack's topics and parameters (guide 05, S1/S3).
 
@@ -321,6 +335,14 @@ def assess_cmu(snap: dict, sensing_only: bool = True) -> tuple[bool, list[str]]:
             warn(f"/api/sport/request has {sport_pubs} publisher(s) -- for S1 sensing-only, launch with is_real_robot:=false")
         elif not sensing_only and sport_pubs == 0:
             fail("/api/sport/request has 0 publishers -- for live motion, launch with is_real_robot:=true")
+
+    if sensing_only and snap.get("is_real_robot") is True:
+        # pathFollower creates its /api/sport/request publisher whether or not
+        # is_real_robot is set, so the publisher count above cannot tell. A
+        # rehearsal (demo.sh --cmu --rehearse) sends /way_point goals: against a
+        # live stack it would walk the robot.
+        fail("pathFollower is_real_robot is TRUE -- a sensing-only check or rehearsal would "
+             "MOVE the robot; relaunch with is_real_robot false")
 
     if not sensing_only:
         am = snap.get("autonomy_mode")

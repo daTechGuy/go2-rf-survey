@@ -65,7 +65,10 @@ class UnitreeRpc:
         self._handlers[service] = on_response
         try:
             t0 = time.monotonic()
-            while (pub.get_subscription_count() == 0 or sub.get_publisher_count() == 0) \
+            # discovery: a Subscription has no get_publisher_count() in rclpy
+            # (Humble), so ask the node for the response topic's publishers
+            while (pub.get_subscription_count() == 0
+                   or self.node.count_publishers(f"/api/{service}/response") == 0) \
                     and time.monotonic() - t0 < 3.0:
                 rclpy.spin_once(self.node, timeout_sec=0.05)      # discovery
             req = Request()

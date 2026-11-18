@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from go2_survey_loop.cmu import (  # noqa: E402
     CARROT_M, PASS_LATERAL_M, STOP_ALL, STOP_FREE, active_target, assess_cmu,
+    effective_cloud_stride,
     carrot, cmu_command, passed, step_cmu, vehicle_pose,
 )
 from go2_survey_loop.explore import ExploreMission, ExploreParams  # noqa: E402
@@ -179,6 +180,18 @@ class TestStepCmu(unittest.TestCase):
         self.assertEqual(active_target(m), (1.5, -0.5))
 
 
+class TestCloudStride(unittest.TestCase):
+    def test_cmu_cloud_is_not_thinned_again(self):
+        # /registered_scan is ~250 points a scan; stride 4 left too few near the
+        # robot for floor_from_scan (min 50) and the loop never found the floor
+        self.assertEqual(effective_cloud_stride("cmu", 4), 1)
+        self.assertEqual(effective_cloud_stride("cmu", 8), 1)
+
+    def test_other_planners_keep_the_requested_stride(self):
+        self.assertEqual(effective_cloud_stride("none", 4), 4)
+        self.assertEqual(effective_cloud_stride("avoid", 0), 1)   # never below 1
+
+
 class TestAssessCmu(unittest.TestCase):
     def test_healthy_s1_snapshot_accepts_camera_init_frame(self):
         # Point-LIO actually stamps /state_estimation and /registered_scan "camera_init"
@@ -208,6 +221,23 @@ class TestAssessCmu(unittest.TestCase):
         }, sensing_only=True)
         self.assertTrue(ok)
         self.assertTrue(any("is_real_robot:=false" in line for line in lines))
+
+    def test_sensing_only_refuses_a_stack_that_can_move_the_robot(self):
+        # a rehearsal sends /way_point goals; if pathFollower is live it would walk
+        base = {
+            "state_est_hz": 100.0, "state_est_frame": "camera_init",
+            "reg_scan_hz": 5.0, "reg_scan_frame": "camera_init",
+            "terrain_hz": 5.0, "path_hz": 10.0,
+            "waypoint_sub_count": 1, "stop_sub_count": 1,
+            "sport_pub_count": 11,   # pathFollower always creates the publisher
+        }
+        ok_off, _ = assess_cmu({**base, "is_real_robot": False}, sensing_only=True)
+        self.assertTrue(ok_off)
+        ok_unknown, _ = assess_cmu(base, sensing_only=True)   # parameter not readable
+        self.assertTrue(ok_unknown)
+        ok_live, lines = assess_cmu({**base, "is_real_robot": True}, sensing_only=True)
+        self.assertFalse(ok_live)
+        self.assertTrue(any("would MOVE the robot" in s for s in lines))
 
     def test_live_mode_refuses_default_autonomy_off_or_1ms_speed_or_missing_subs(self):
         base = {
