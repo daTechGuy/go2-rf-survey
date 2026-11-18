@@ -29,6 +29,13 @@ K=np.array([[0,-ax[2],ax[1]],[ax[2],0,-ax[0]],[-ax[1],ax[0],0]])
 R=np.eye(3)+K+K@K*((1-c)/(s*s))
 print('scans used',len(N),' mean normal',np.round(nm,3),' tilt %.1f deg  max spread %.2f deg'%(math.degrees(math.acos(c)),spread))
 print('check R@normal =',np.round(R@nm,4),' det %.3f'%np.linalg.det(R))
+_prev={}
+try:
+    _prev=yaml.safe_load(open(os.path.expanduser('~/Desktop/level_correction.yaml'))) or {}
+except Exception:
+    pass
 out={'floor_normal_body':[float(v) for v in nm],'R_level':[[float(v) for v in row] for row in R],'tilt_deg':float(math.degrees(math.acos(c))),'scans':int(len(N)),'measured':time.strftime('%F %T')}
+for _k in ('cloud_yaw_deg','cloud_yaw_note'):
+    if _k in _prev: out[_k]=_prev[_k]   # keep the separately measured cloud yaw
 yaml.safe_dump(out,open(os.path.expanduser('~/Desktop/level_correction.yaml'),'w'))
 print('saved ~/Desktop/level_correction.yaml')

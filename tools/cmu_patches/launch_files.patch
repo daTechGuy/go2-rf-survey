@@ -45,3 +45,20 @@
  
    <node pkg="tf2_ros" exec="static_transform_publisher" name="loamInterfaceTransPubMap" args="0 0 0 0 0 0 /map /camera_init"/>
  
+--- a/slam/point_lio_unilidar/launch/mapping_utlidar.launch
++++ b/slam/point_lio_unilidar/launch/mapping_utlidar.launch
+@@ -12,11 +12,11 @@
+ 		<param name="prop_at_freq_of_imu" value="true"/>
+ 		<param name="check_satu" value="true"/>
+ 		<param name="init_map_size" value="10"/>
+-		<param name="point_filter_num" value="1"/> <!--4, 3-->
++		<param name="point_filter_num" value="4"/> <!--4, 3-->
+ 
+ 		<param name="space_down_sample" value="true" />
+-		<param name="filter_size_surf" value="0.1" /> <!--0.5, 0.3, 0.2, 0.15, 0.1-->
+-		<param name="filter_size_map" value="0.1" /> <!--0.5, 0.3, 0.15, 0.1-->
++		<param name="filter_size_surf" value="0.3" /> <!--0.5, 0.3, 0.2, 0.15, 0.1-->
++		<param name="filter_size_map" value="0.3" /> <!--0.5, 0.3, 0.15, 0.1-->
+ 		<param name="cube_side_length" value="1000.0" /> <!--2000-->
+ 		<param name="runtime_pos_log_enable" value="false" /> <!--1-->
+ 

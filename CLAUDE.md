@@ -150,16 +150,22 @@ a different USB port fixed it. Tailscale was offered and declined.
 `packages.ros.org`: the Tsinghua mirror dropped Foxy arm64 and the Open
 Robotics apt key had expired; stack built, 23 packages), repo synced by
 `git archive` excluding `config/` (the robot's real MID360 config stays).
-S1: `cmu-check` READY, but two fixes were needed, kept as patches in
-[`tools/cmu_patches/`](tools/cmu_patches/README.md) (start there): the
-transform node starved the IMU, and the map floor was tilted 24 degrees (the
-upstream mount rotation does not match this robot; we measure a level
-rotation from the floor). S2 IMU calibration done. After: a walk closes
-0.04 m over 12.8 m, floor tilt 0.9 deg. The stack on the robot runs with
-**`is_real_robot` false** (cannot move it); flip it only for S3. The patches
-live on the robot, outside this repo: re-apply them after any re-clone.
+S1: `cmu-check` READY, but four fixes were needed, kept as patches in
+[`tools/cmu_patches/`](tools/cmu_patches/README.md) (start there, read its
+table): the transform node starved the IMU; the map floor was tilted 24 deg;
+**Point-LIO ran 95 s behind real time and growing** (too heavy for 4 cores at
+15 W: lighter settings; it made every walk test mislead, so run
+`lag_check.py` first); and the lidar cloud is yawed ~113 deg from the IMU
+frame (cloud-only yaw correction). S2 IMU calibration done. After all four a
+walk matches the Go2's leg odometry (heading within 1.5 deg, lag under 1 s,
+no wander at rest, height flat) and the planner's path bends round a chair
+2 m ahead (chair test passed, no motion). Open: SLAM reads ~15-20% more
+distance than leg odometry (tape measure before S3). The stack on the robot
+runs with **`is_real_robot` false** (cannot move it); flip it only for S3.
+The patches and calibration files live on the robot, outside this repo:
+re-apply them after any re-clone.
 
-**Next action:** field guide 05 S1 leftovers (chair test: `cmu-goal` behind a chair 1.5 m ahead, watch `/path` bend), then S3 (`go2loop.sh cmu-goal 3.0 0.0`, **set `is_real_robot` true first, ask**), S4 (`demo.sh --cmu`). Then `python tools\get_results.py` on the laptop.
+**Next action:** tape-measure check of SLAM distance, then S3 (`go2loop.sh cmu-goal 3.0 0.0`, **set `is_real_robot` true first, ask**; chair 1.5 m ahead, 0.3 m/s, L2+B and `cmu-stop` ready), S4 (`demo.sh --cmu`). Then `python tools\get_results.py` on the laptop.
 Then the 3 m route / classroom (guide 02). Each session:
 route (user sudo) → preflight → `bridge-up` + `turn-test --i-confirm-breathing`
 (defaults to the 1.0 rad/s × 0.5 s turn that passes) → [ASK] demo. Robot-side

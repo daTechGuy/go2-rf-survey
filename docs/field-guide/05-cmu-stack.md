@@ -90,15 +90,21 @@ keep up; send a test goal with `bash ~/go2-rf-survey/tools/go2loop.sh cmu-goal 2
 and watch `/path` bend round the chair.
 
 **S1 result (2026-11-19):** `cmu-check` READY, but the stack as cloned could
-not follow a walk, and needed two fixes, both in
-[`tools/cmu_patches/`](../../tools/cmu_patches/README.md): the transform node
-starved the IMU (13 Hz instead of 250 Hz: threads + vectorised filter), and the
-map floor was tilted 24 degrees (a measured level rotation, from
-`make_level.py`, applied to cloud and gyro). After both: IMU about 200 Hz, a
-12.8 m walk with a full turn closed to 0.04 m, floor tilt 0.9 deg, walked
-height flat. Do the S2 calibration and `make_level.py` before judging S1.
-The launch edits there also set `is_real_robot` to **false** (the launch
-does not forward it; the default is true): flip it only for S3.
+not follow a walk. It needed four fixes, all in
+[`tools/cmu_patches/`](../../tools/cmu_patches/README.md) (read its table):
+the transform node starved the IMU, the map floor was tilted 24 degrees, the
+pose ran 95 s behind real time and growing (Point-LIO too heavy for 4 cores at
+15 W: fixed with lighter settings), and the lidar cloud is yawed about 113
+degrees from the IMU frame. **Always check `lag_check.py` first:** with a
+lagging pose every other test misleads (walks look "late", the pose "drifts at
+rest"). After all four, against the Go2's own leg odometry: forward direction
+within 1.5 deg, lag under 1 s, no wander at rest, height flat, and the
+planner's path bends round a chair 2 m ahead (0.6 m clearance, a pure turn
+command first). SLAM reads ~15-20% more distance than leg odometry (check
+with a tape measure before S3). The built-in L1 can see a chair only after the
+yaw fix (its view reaches +7 deg ahead; before, -10 deg). The launch edits
+set `is_real_robot` to **false** (the launch does not forward it; the default
+is true): flip it only for S3.
 
 **S2 — IMU calibration (MOVES: 20 s spin).** Done 2026-11-19 (this robot:
 `ang_z2x_proj` 0.134, `ang_z2y_proj` -0.195).
