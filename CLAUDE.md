@@ -74,7 +74,8 @@ clouds agree to 1.5 cm, explore done.
 **Session 2026-11-11:** WiFi to the robot: USB adapter RTL8812BU
 (`0bda:b812`), driver built on the robot from lwfinger/rtw88 with two 5.10
 patches (`~/build/rtw88`, installed under `extra/rtw88`). The Verizon MiFi
-isolates its clients (no setting), so the robot joins the laptop's Mobile
+isolates its clients (see the 2026-11-18 note: the admin page's AP Isolation
+switch does not fix it), so the robot joins the laptop's Mobile
 Hotspot "LENOVO-LAPTOP 7556": robot `192.168.137.247`, `ssh go2w`. Mid-360
 calibrated (`config/mid360_mount.yaml` on the robot): it sees the **ceiling**
 far more than the floor, so `mid360_calibrate.py` now levels on the ceiling,
@@ -126,6 +127,24 @@ bleed into unvisited rooms), `coverage.py` `simplify`/`line_clear` when
 escaping a sub-clearance start cell around a corner, `go2_avoid.py` migrated to
 `UnitreeRpc`, `preflight.sh` + `get_results.py` WiFi hotspot (`go2w`) support,
 and `run_report.py` detour counter.
+
+**Session 2026-11-18 (robot networking):** The robot's `wlan0` has two saved
+NetworkManager profiles: the laptop hotspot `LENOVO-LAPTOP 7556` (autoconnect
+priority **20**) and the Verizon MiFi `Verizon-MW513U-2EC5` (priority **10**,
+factory SSID). It prefers the hotspot when that is on and falls back to the
+MiFi. Priority applies only when it connects (boot or Wi-Fi lost); it does not
+hop between networks while connected. Move it by hand with `sudo nmcli con up
+"LENOVO-LAPTOP 7556" ifname wlan0`. **The MiFi (TCL LINKZONE 5G UW, admin
+`http://192.168.1.1`) drops laptop-to-robot traffic even with AP Isolation off**
+(the only isolation switch, Wi-Fi > Advanced; both devices on 5 GHz; ARP
+unanswered, so layer 2): the robot reaches the internet on it, the laptop
+cannot reach the robot (ping/ssh to `192.168.1.30` time out). It was factory
+reset this session and the result was the same. `ssh go2w` therefore needs the
+laptop hotspot up, and Windows turns it off when idle (turn off the automatic
+shutoff in Mobile hotspot settings), after which the robot falls back to the
+MiFi and only the cable (`ssh go2`) reaches it. The USB Ethernet dongle
+(`Ethernet 4`, `192.168.123.222`) sometimes fails to enumerate after a reboot:
+a different USB port fixed it. Tailscale was offered and declined.
 
 **Next action:** field guide 05, S0 (install, nothing moves) then S1 (`go2loop.sh cmu-check`), S2 (IMU calib), S3 (`go2loop.sh cmu-goal 3.0 0.0`), S4 (`demo.sh --cmu`). Then `python tools\get_results.py` on the laptop.
 Then the 3 m route / classroom (guide 02). Each session:
