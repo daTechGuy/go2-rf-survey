@@ -89,7 +89,19 @@ wait out the startup delay, then run
 keep up; send a test goal with `bash ~/go2-rf-survey/tools/go2loop.sh cmu-goal 2.0 0.0`
 and watch `/path` bend round the chair.
 
-**S2 — IMU calibration (MOVES: 20 s spin).**
+**S1 result (2026-11-19):** `cmu-check` READY, but the stack as cloned could
+not follow a walk, and needed two fixes, both in
+[`tools/cmu_patches/`](../../tools/cmu_patches/README.md): the transform node
+starved the IMU (13 Hz instead of 250 Hz: threads + vectorised filter), and the
+map floor was tilted 24 degrees (a measured level rotation, from
+`make_level.py`, applied to cloud and gyro). After both: IMU about 200 Hz, a
+12.8 m walk with a full turn closed to 0.04 m, floor tilt 0.9 deg, walked
+height flat. Do the S2 calibration and `make_level.py` before judging S1.
+The launch edits there also set `is_real_robot` to **false** (the launch
+does not forward it; the default is true): flip it only for S3.
+
+**S2 — IMU calibration (MOVES: 20 s spin).** Done 2026-11-19 (this robot:
+`ang_z2x_proj` 0.134, `ang_z2y_proj` -0.195).
 
 **S3 — first autonomous goal (MOVES).** Chair 1.5 m ahead, one waypoint
 3 m ahead behind it (`bash ~/go2-rf-survey/tools/go2loop.sh cmu-goal 3.0 0.0`

@@ -1,0 +1,89 @@
+--- a/utilities/transform_sensors/transform_sensors/transform_everything.py	2026-11-19 02:05:05.492542310 +0800
++++ b/utilities/transform_sensors/transform_sensors/transform_everything.py	2026-11-19 02:44:44.286818359 +0800
+@@ -2,6 +2,8 @@
+ import rclpy
+ from rclpy.node import Node
+ from rclpy.time import Time
++from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
++from rclpy.executors import MultiThreadedExecutor
+ from sensor_msgs.msg import Imu
+ from sensor_msgs.msg import PointCloud2, PointField
+ from geometry_msgs.msg import TransformStamped, Vector3
+@@ -19,8 +21,11 @@
+ class Repuber(Node):
+     def __init__(self):
+         super().__init__('sensor_transformer')
+-        self.imu_sub = self.create_subscription(Imu, '/utlidar/imu', self.imu_callback, 50)
+-        self.cloud_sub = self.create_subscription(PointCloud2, '/utlidar/cloud', self.cloud_callback, 50)
++        # patched: separate callback groups so the heavy cloud callback cannot starve the 250 Hz IMU
++        self.imu_group = MutuallyExclusiveCallbackGroup()
++        self.cloud_group = MutuallyExclusiveCallbackGroup()
++        self.imu_sub = self.create_subscription(Imu, '/utlidar/imu', self.imu_callback, 50, callback_group=self.imu_group)
++        self.cloud_sub = self.create_subscription(PointCloud2, '/utlidar/cloud', self.cloud_callback, 50, callback_group=self.cloud_group)
+         
+         self.imu_raw_pub = self.create_publisher(Imu, '/utlidar/transformed_raw_imu', 50)
+         self.imu_pub = self.create_publisher(Imu, '/utlidar/transformed_imu', 50)
+@@ -89,6 +94,15 @@
+         self.body2imu_trans.transform.rotation.z = quat[2]
+         self.body2imu_trans.transform.rotation.w = quat[3]
+         
++        # patched: measured floor-level correction (see ~/Desktop/level_correction.yaml)
++        self.R_level = np.eye(3)
++        try:
++            lv = yaml.safe_load(open(os.path.join(os.path.expanduser('~'), 'Desktop/level_correction.yaml')))
++            self.R_level = np.array(lv['R_level'], dtype=float)
++            print('level_correction.yaml loaded, tilt %.1f deg' % lv['tilt_deg'], flush=True)
++        except Exception as e:
++            print('level_correction.yaml NOT loaded (%s): no level correction' % e, flush=True)
++
+         self.x_filter_min = -0.7
+         self.x_filter_max = -0.1
+         self.y_filter_min = -0.3
+@@ -96,7 +110,9 @@
+         self.z_filter_min = -0.6 - self.cam_offset
+         self.z_filter_max = 0 - self.cam_offset
+ 
+-        rclpy.spin(self)
++        executor = MultiThreadedExecutor(num_threads=2)
++        executor.add_node(self)
++        executor.spin()
+                 
+     def is_in_filter_box(self, point):
+         # Check if the point is in the filter box
+@@ -123,19 +139,16 @@
+         transformed_points = points
+         transformed_points[:, 0:3] = points[:, 0:3] @ mat.T + translation
+         transformed_points[:, 2] -= self.cam_offset
+-        i = 0
+-        remove_list = []
+-        transformed_points = transformed_points.tolist()
+-        for i in range(len(transformed_points)):
+-            transformed_points[i][4] = int(transformed_points[i][4])
+-            if self.is_in_filter_box(transformed_points[i]):
+-                remove_list.append(i)
++        # patched: same filter box, vectorised (original looped over every point in Python)
++        in_box = ((transformed_points[:, 0] > self.x_filter_min) & (transformed_points[:, 0] < self.x_filter_max) &
++                  (transformed_points[:, 1] > self.y_filter_min) & (transformed_points[:, 1] < self.y_filter_max) &
++                  (transformed_points[:, 2] > self.z_filter_min) & (transformed_points[:, 2] < self.z_filter_max))
++        kept = transformed_points[~in_box]
++        kept[:, 0:3] = kept[:, 0:3] @ self.R_level.T
++        transformed_points = kept.tolist()
++        for p in transformed_points:
++            p[4] = int(p[4])
+ 
+-        remove_list.sort(reverse=True)
+-
+-        for id_to_remove in remove_list:
+-            del transformed_points[id_to_remove]
+-        
+         elevated_cloud = pc2.create_cloud(data.header, data.fields, transformed_points)
+         elevated_cloud.header.stamp = Time(nanoseconds=Time.from_msg(elevated_cloud.header.stamp).nanoseconds + self.time_stamp_offset).to_msg()
+         elevated_cloud.header.frame_id = "body"
+@@ -192,6 +205,7 @@
+         x2 += x_comp_rate * z2
+         y2 += y_comp_rate * z2
+         
++        x2, y2, z2 = (self.R_level @ np.array([x2, y2, z2])).tolist()
+         transformed_angular_velocity = Vector3()
+         transformed_angular_velocity.x = x2
+         transformed_angular_velocity.y = y2
